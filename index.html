@@ -363,7 +363,8 @@ function makeDemoStore(){
       if(Object.values(db.users).some(u => u.login === login)) throw {code:'email-already-in-use'};
       const id = uid(); db.users[id] = {uid:id, name, login, role:'sales', active:true, createdAt:Date.now()}; persist();
     },
-    async updateUser(id, patch){ Object.assign(db.users[id], patch); persist(); }
+    async updateUser(id, patch){ Object.assign(db.users[id], patch); persist(); },
+    async resetSales(u){ return Object.values(db.leads).filter(l => l.assignedTo === u.uid).length; }
   };
 }
 
@@ -406,7 +407,11 @@ function makeFirebaseStore(){
     },
     async signIn(login, pw){
       if(!auth) throw {message:'السيستم لسه بيحمّل، استنى ثانية وجرّب تاني'};
-      const email = login.includes('@') ? login.trim() : `${login.trim().toLowerCase()}@${LOGIN_DOMAIN}`;
+      let email = login.trim();
+      if(!email.includes('@')){
+        const l = email.toLowerCase(); email = `${l}@${LOGIN_DOMAIN}`;
+        try{ const d = await db.collection('logins').doc(l).get(); if(d.exists && d.data().email) email = d.data().email; }catch(e){}
+      }
       await auth.signInWithEmailAndPassword(email, pw);
     },
     async registerAdmin(pw){ await auth.createUserWithEmailAndPassword(ADMIN_EMAIL, pw); },
@@ -441,7 +446,22 @@ function makeFirebaseStore(){
       await db.collection('users').doc(c.user.uid).set({name, login, role:'sales', active:true, createdAt:Date.now()});
       await sec.auth().signOut();
     },
-    async updateUser(id, patch){ await db.collection('users').doc(id).update(patch); }
+    async updateUser(id, patch){ await db.collection('users').doc(id).update(patch); },
+    // كلمة سر جديدة: حساب دخول جديد بنفس اسم الدخول، وكل العملاء بيتنقلوا عليه، والقديم بيتقفل
+    async resetSales(u, password){
+      const sec = firebase.apps.find(a => a.name === 'secondary') || firebase.initializeApp(firebaseConfig, 'secondary');
+      const email = `${u.login}.r${Date.now().toString(36)}@${LOGIN_DOMAIN}`;
+      const c = await sec.auth().createUserWithEmailAndPassword(email, password);
+      const nu = c.user.uid;
+      await db.collection('users').doc(nu).set({name:u.name, login:u.login, role:'sales', active:true, createdAt:u.createdAt || Date.now(), prevUids:[...(u.prevUids || []), u.uid]});
+      await db.collection('logins').doc(u.login).set({email});
+      const snap = await db.collection('leads').where('assignedTo', '==', u.uid).get();
+      const ids = snap.docs.map(d => d.id);
+      for(const part of chunks(ids)){ const b = db.batch(); part.forEach(id => b.update(db.collection('leads').doc(id), {assignedTo:nu})); await b.commit(); }
+      await db.collection('users').doc(u.uid).update({active:false, replacedBy:nu});
+      await sec.auth().signOut();
+      return ids.length;
+    }
   };
 }
 
@@ -458,6 +478,8 @@ const isAdmin = () => S.me && S.me.role === 'admin';
 const userName = id => id ? (S.users[id] ? S.users[id].name : (S.me && id === S.me.uid ? S.me.name : '—')) : 'مش متوزع';
 const activeSales = () => Object.values(S.users).filter(u => u.role === 'sales' && u.active).sort((a,b) => a.name.localeCompare(b.name, 'ar'));
 const leadById = id => S.leads.find(l => l.id === id);
+const salesList = () => Object.values(S.users).filter(u => u.role === 'sales' && !u.replacedBy);
+const uidsOf = id => { const u = S.users[id]; return u ? [u.uid, ...(u.prevUids || [])] : [id]; };
 
 render();
 store.init(onAuth);
@@ -581,7 +603,7 @@ function adminHome(){
     const mine = L.filter(l => l.assignedTo === u.uid);
     return {u, total:mine.length, nc:mine.filter(l => l.status === 'new').length, calls:calls[u.uid] || 0,
       late:mine.filter(isOverdue).length, hot:mine.filter(l => l.status === 'interested').length,
-      last:Math.max(0, ...mine.flatMap(l => (l.history || []).filter(h => h.by === u.uid).map(h => h.at)))};
+      last:Math.max(0, ...mine.flatMap(l => (l.history || []).filter(h => uidsOf(u.uid).includes(h.by)).map(h => h.at)))};
   }).sort((a, b) => b.total - a.total);
   return `
     <h2>أهلاً يا ${esc(S.me.name.split(' ')[0])} 👋</h2>
@@ -649,7 +671,7 @@ function leadsView(){
     <input class="search" id="q" type="search" placeholder="دوّر بالاسم أو الرقم أو المشروع..." value="${esc(S.f.q)}" oninput="App.search(this.value)">
     ${isAdmin() ? `<select class="sel" onchange="App.sales(this.value)">
       <option value="all">كل السيلز</option>
-      ${Object.values(S.users).filter(u => u.role === 'sales').map(u => `<option value="${u.uid}" ${S.f.sales === u.uid ? 'selected' : ''}>${esc(u.name)}${u.active ? '' : ' (متوقف)'}</option>`).join('')}
+      ${salesList().map(u => `<option value="${u.uid}" ${S.f.sales === u.uid ? 'selected' : ''}>${esc(u.name)}${u.active ? '' : ' (متوقف)'}</option>`).join('')}
     </select>` : ''}
     <div class="chips">${chip('all', 'الكل', S.leads.length)}${Object.entries(STATUSES).map(([k, v]) => chip(k, v.label, counts[k] || 0)).join('')}</div>
     ${S.f.special ? `<div class="chips"><button class="chip on" onclick="App.quick('', true)">${SPECIALS[S.f.special]} ✕</button></div>` : ''}
@@ -860,7 +882,7 @@ function distributeUnassignedView(){
 
 /* ---------------- الفريق ---------------- */
 function teamView(){
-  const sales = Object.values(S.users).filter(u => u.role === 'sales').sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name, 'ar'));
+  const sales = salesList().sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name, 'ar'));
   return `
     <h2>الفريق (${sales.filter(u => u.active).length} سيلز شغالين)</h2>
     <form class="card" onsubmit="App.addSales(event)">
@@ -871,7 +893,7 @@ function teamView(){
         <div><label class="f">كلمة السر</label><input class="in" id="sp" dir="ltr" required minlength="6" placeholder="6 على الأقل"></div>
       </div>
       <button class="btn block" style="margin-top:12px" id="addBtn">إضافة</button>
-      ${S.newCred ? `<div class="cred" style="margin-top:12px">اتضاف <b>${esc(S.newCred.name)}</b> ✓ ابعتله البيانات دي:<br>
+      ${S.newCred ? `<div class="cred" style="margin-top:12px">${S.newCred.reset ? 'كلمة السر الجديدة لـ' : 'اتضاف'} <b>${esc(S.newCred.name)}</b> ✓ ابعتله البيانات دي:<br>
         اسم الدخول: <code>${esc(S.newCred.login)}</code><br>كلمة السر: <code>${esc(S.newCred.pw)}</code>
         <div style="margin-top:8px"><button type="button" class="btn ghost" onclick="App.copyCred()">انسخ البيانات</button></div></div>` : ''}
     </form>
@@ -881,6 +903,7 @@ function teamView(){
       const mine = S.leads.filter(l => l.assignedTo === u.uid);
       return `<div class="dist-row">
         <div style="flex:1"><b>${esc(u.name)}</b><div class="muted" style="font-size:12px"><span dir="ltr">${esc(u.login)}</span> · ${mine.length} عميل · ${mine.filter(l => l.status === 'closed').length} بيع</div></div>
+        <button class="btn ghost" style="padding:6px 10px;font-size:12.5px" onclick="App.pwSheet('${u.uid}')">كلمة سر جديدة</button>
         <label class="switch" title="${u.active ? 'شغال' : 'متوقف'}"><input type="checkbox" ${u.active ? 'checked' : ''} onchange="App.toggleUser('${u.uid}', this.checked)"><span></span></label>
       </div>`; }).join('') : `<div class="empty">لسه مفيش سيلز</div>`}
     </div>
@@ -889,8 +912,8 @@ function teamView(){
 
 /* ---------------- النشاط ---------------- */
 function activityView(){
-  const sales = Object.values(S.users).filter(u => u.role === 'sales');
-  const list = S.acts.filter(a => S.actFilter === 'all' || a.by === S.actFilter);
+  const sales = salesList();
+  const list = S.acts.filter(a => S.actFilter === 'all' || uidsOf(S.actFilter).includes(a.by));
   const line = a => {
     if(a.type === 'call'){ const s = STATUSES[a.status] || {label:a.status, color:'#64748B'};
       return `<div class="act"><div class="ic" style="color:${s.color}">${ICON.phone.replace('<svg', '<svg width="18" height="18"')}</div><div class="tx">
@@ -1058,6 +1081,26 @@ const App = window.App = {
   copyCred(){
     const c = S.newCred; const txt = `أهلاً ${c.name}، دي بيانات دخولك على Blue:\nاسم الدخول: ${c.login}\nكلمة السر: ${c.pw}\nاللينك: ${location.href.split('#')[0]}`;
     navigator.clipboard.writeText(txt).then(() => toast('اتنسخت ✓'), () => toast('مقدرتش أنسخ، انسخها بإيدك'));
+  },
+  pwSheet(uid){
+    const u = S.users[uid]; if(!u) return;
+    openSheet(`<div class="sheet-h"><h2>كلمة سر جديدة</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted">لـ <b>${esc(u.name)}</b> — اسم الدخول هيفضل زي ما هو: <code dir="ltr">${esc(u.login)}</code><br>كلمة السر القديمة هتبطّل تشتغل، وكل عملاؤه وتاريخهم هيفضلوا معاه.</p>
+      <div class="card"><label class="f">كلمة السر الجديدة</label>
+        <input class="in" id="npw" dir="ltr" minlength="6" placeholder="6 حروف أو أرقام على الأقل">
+        <button class="btn block" style="margin-top:12px" id="npwBtn" onclick="App.resetPw('${uid}')">غيّر كلمة السر</button></div>`);
+    setTimeout(() => { const el = $('#npw'); if(el) el.focus(); }, 50);
+  },
+  async resetPw(uid){
+    const u = S.users[uid], pw = $('#npw').value.trim();
+    if(pw.length < 6) return toast('كلمة السر لازم 6 حروف أو أرقام على الأقل');
+    const b = $('#npwBtn'); b.disabled = true; b.textContent = 'بيغيّر...';
+    try{
+      await store.resetSales(u, pw);
+      closeSheet(); S.newCred = {name:u.name, login:u.login, pw, reset:true};
+      await store.addActivity({type:'assign', at:Date.now(), by:S.me.uid, byName:S.me.name, note:`${S.me.name} غيّر كلمة سر ${u.name}`});
+      render(); window.scrollTo(0, 0); toast('اتغيرت ✓');
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'غيّر كلمة السر'; }
   },
   async toggleUser(uid, on){ try{ await store.updateUser(uid, {active:on}); toast(on ? 'الحساب اتفعّل' : 'الحساب اتقفل'); }catch(e){ toast(fbError(e)); render(); } }
 };
