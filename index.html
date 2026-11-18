@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0B2A5B">
 <title>Blue</title>
 <meta name="apple-mobile-web-app-title" content="Blue">
@@ -21,7 +21,7 @@
   --r:14px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Cairo',system-ui,sans-serif;font-size:15px}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Cairo',system-ui,sans-serif;font-size:15px;-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden;max-width:100%}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
 .hidden{display:none!important}
@@ -546,10 +546,10 @@ function teamOf(uid){
 }
 const userName = id => id ? (S.users[id] ? S.users[id].name : (S.me && id === S.me.uid ? S.me.name : '—')) : 'مش متوزع';
 // اللي ينفع يتوزع عليهم عملاء (سيلز + تيم ليدرز) في نطاق اللي فاتح
-const activeSales = () => Object.values(S.users).filter(u => ['sales','leader'].includes(u.role) && u.active && !u.replacedBy
+const activeSales = () => Object.values(S.users).filter(u => (['sales','leader'].includes(u.role) || (u.role === 'manager' && isBoss())) && u.active && !u.replacedBy
   && (isBoss() || u.uid === S.me.uid || u.leaderId === S.me.uid)).sort((a,b) => (ROLE_RANK[a.role] - ROLE_RANK[b.role]) || a.name.localeCompare(b.name, 'ar'));
 const leadById = id => S.leads.find(l => l.id === id);
-const salesList = () => Object.values(S.users).filter(u => ['sales','leader'].includes(u.role) && !u.replacedBy
+const salesList = () => Object.values(S.users).filter(u => (['sales','leader'].includes(u.role) || (u.role === 'manager' && isBoss())) && !u.replacedBy
   && (isBoss() || u.uid === S.me.uid || u.leaderId === S.me.uid));
 // الموظفين اللي يظهروا في صفحة الفريق
 const staffList = () => Object.values(S.users).filter(u => u.role !== 'admin' && !u.replacedBy && u.uid !== S.me.uid
@@ -559,9 +559,19 @@ const uidsOf = id => { const u = S.users[id]; return u ? [u.uid, ...(u.prevUids 
 render();
 store.init(onAuth);
 
+// بعد الدخول: يرجّع الشاشة لمقاسها الطبيعي لو الآيفون كان عمل زووم وقت كتابة كلمة السر
+function resetZoom(){
+  const m = document.querySelector('meta[name=viewport]'); if(!m) return;
+  const c = m.getAttribute('content');
+  m.setAttribute('content', c.replace(/,?\s*maximum-scale=[\d.]+/, '') + ', maximum-scale=1.0001');
+  setTimeout(() => m.setAttribute('content', c), 300);
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  window.scrollTo(0, 0);
+}
 function onAuth(me){
   S.unsub.forEach(f => f && f()); S.unsub = [];
   if(!me || me.error){ S.me = null; S.authErr = me && me.error || ''; S.users = {}; S.leads = []; S.acts = []; S.leadsLoaded = false; closeSheet(); return render(); }
+  resetZoom();
   S.me = me; S.authErr = ''; S.newCred = null; S.upload = null; S.dist = null; S.actFilter = 'all'; S.tab = isAdmin() ? 'home' : 'today';
   S.f = {q:'', status:'all', sales:'all', special:''};
   S.unsub.push(store.onUsers(u => { S.users = u; render(); }));
@@ -694,7 +704,7 @@ function adminHome(){
     <div class="card" style="padding:4px 10px">
       <div class="team-row team-head"><div class="n">السيلز</div><div>عنده</div><div>ماكلّمش</div><div>كلّم النهارده</div><div>متأخر</div></div>
       ${team.length ? team.map(r => `<button class="team-row" onclick="App.bySales('${r.u.uid}')">
-        <div class="n">${esc(r.u.name)}${r.u.role === 'leader' ? ' <span class="role-tag r-leader">تيم ليدر</span>' : ''}<small>${r.last ? 'آخر مكالمة ' + ago(r.last) : 'لسه مكلّمش حد'}</small></div>
+        <div class="n">${esc(r.u.name)}${r.u.role !== 'sales' ? ` <span class="role-tag r-${r.u.role}">${ROLE_LABEL[r.u.role]}</span>` : ''}<small>${r.last ? 'آخر مكالمة ' + ago(r.last) : 'لسه مكلّمش حد'}</small></div>
         <div>${r.total}</div><div class="${r.nc ? 'c-late' : ''}">${r.nc}</div><div class="${r.calls ? 'c-ok' : ''}">${r.calls}</div><div class="${r.late ? 'c-late' : ''}">${r.late}</div>
       </button>`).join('') : `<div class="empty">مفيش سيلز لسه. ضيفهم من صفحة الفريق.</div>`}
     </div>`;
