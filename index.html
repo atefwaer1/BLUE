@@ -173,6 +173,15 @@ textarea.in{min-height:80px;resize:vertical}
 #toast.show{opacity:1;transform:translateX(-50%)}
 .cred{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;padding:12px;font-size:14px}
 .cred code{direction:ltr;display:inline-block;background:#fff;padding:1px 8px;border-radius:6px;font-weight:700}
+.voice-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+#recBox{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#recBox audio,.vplay audio{height:36px;max-width:230px}
+.rec-dot{width:10px;height:10px;border-radius:99px;background:#DC2626;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+.rec-time{font-weight:700;color:#DC2626;direction:ltr;min-width:42px}
+.vbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 12px;font-size:13px;font-weight:700;color:var(--navy);margin-top:5px}
+.btn.rec{background:#FEE2E2;color:#B91C1C}
+.btn.listening{background:#DC2626;color:#fff}
 .switch{position:relative;width:46px;height:26px;flex:none}
 .dist-row label.switch,.staff label.switch{flex:none;display:inline-block}
 .staff{padding:11px 0;border-bottom:1px solid var(--line)}
@@ -231,6 +240,8 @@ const DAY = 864e5;
 const ROLE_LABEL = {admin:'الأدمن', manager:'مدير مبيعات', leader:'تيم ليدر', sales:'سيلز'};
 const ROLE_RANK = {admin:0, manager:1, leader:2, sales:3};
 const BOSS_ROLES = ['admin','manager'];
+const MAX_REC_SEC = 180;   // أقصى مدة للفويس: 3 دقايق
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 /* ---------------- أدوات ---------------- */
 const $ = s => document.querySelector(s);
@@ -378,6 +389,9 @@ function makeDemoStore(){
     },
     async deleteLeads(ids){ ids.forEach(id => delete db.leads[id]); persist(); },
     async addActivity(a){ db.activities.push(clone(a)); persist(); },
+    _voices:{},
+    async saveVoice(b64){ const id = uid(); this._voices[id] = b64; return {id, n:1}; },
+    async loadVoice(id){ if(!this._voices[id]) throw {message:'الفويس ده مش موجود في النسخة التجريبية'}; return this._voices[id]; },
     async createSales({name, login, role = 'sales', leaderId = null}){
       if(Object.values(db.users).some(u => u.login === login)) throw {code:'email-already-in-use'};
       const id = uid(); db.users[id] = {uid:id, name, login, role, leaderId, active:true, createdAt:Date.now()}; persist();
@@ -466,6 +480,19 @@ function makeFirebaseStore(){
       for(const part of chunks(ids)){ const b = db.batch(); part.forEach(id => b.delete(db.collection('leads').doc(id))); await b.commit(); }
     },
     async addActivity(a){ await db.collection('activities').add(a); },
+    // الفويس بيتحفظ في Firestore نفسه مقسوم على أجزاء (من غير Storage المدفوع)
+    async saveVoice(b64, meta){
+      const id = db.collection('voices').doc().id, size = 700000, parts = [];
+      for(let i = 0; i < b64.length; i += size) parts.push(b64.slice(i, i + size));
+      const b = db.batch();
+      parts.forEach((data, i) => b.set(db.collection('voices').doc(`${id}_${i}`), {...meta, i, n:parts.length, data}));
+      await b.commit();
+      return {id, n:parts.length};
+    },
+    async loadVoice(id, n){
+      const docs = await Promise.all(Array.from({length:n}, (_, i) => db.collection('voices').doc(`${id}_${i}`).get()));
+      return docs.map(d => d.exists ? d.data().data : '').join('');
+    },
     async createSales({name, login, password, role = 'sales', leaderId = null}){
       const sec = firebase.apps.find(a => a.name === 'secondary') || firebase.initializeApp(firebaseConfig, 'secondary');
       const c = await sec.auth().createUserWithEmailAndPassword(`${login}@${LOGIN_DOMAIN}`, password);
@@ -756,8 +783,32 @@ function todayView(){
 }
 
 /* ---------------- تفاصيل العميل ---------------- */
+/* ---------------- الفويس ---------------- */
+const mmss = sec => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+function voiceBtn(v){
+  if(!v || !v.id) return '';
+  return `<div class="vplay"><button type="button" class="vbtn" onclick="App.play(this, '${esc(v.id)}', ${+v.n || 1}, '${esc(v.mime || '')}')">▶ اسمع الفويس (${mmss(v.dur || 0)})</button></div>`;
+}
+function recHTML(){
+  const r = S.rec;
+  if(r && r.recording) return `<span class="rec-dot"></span><span class="rec-time" id="recTime">${mmss(Math.round((Date.now() - r.start) / 1000))}</span>
+    <button type="button" class="btn rec mini" onclick="App.recStop()">وقّف التسجيل</button>`;
+  if(r && r.blob) return `<audio controls src="${r.url}"></audio><button type="button" class="btn ghost mini" onclick="App.recClear()">امسح</button>`;
+  return `<button type="button" class="btn ghost mini" onclick="App.recStart()">● سجّل فويس</button>`;
+}
+function renderRec(){ const el = $('#recBox'); if(el) el.innerHTML = recHTML(); const d = $('#dicBtn'); if(d) d.disabled = !!(S.rec && S.rec.recording); }
+function recCleanup(){
+  const r = S.rec;
+  if(r){ clearInterval(r.timer); try{ if(r.mr && r.mr.state === 'recording'){ r.discard = true; r.mr.stop(); } }catch(e){}
+    if(r.stream) r.stream.getTracks().forEach(t => t.stop()); if(r.url) URL.revokeObjectURL(r.url); }
+  S.rec = null;
+  if(S.dic){ try{ S.dic.stop(); }catch(e){} S.dic = null; }
+}
+const blobToB64 = blob => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); });
+function b64ToBlob(b64, mime){ const bin = atob(b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], {type:mime || 'audio/webm'}); }
+
 function openSheet(html){ const s = $('#sheet'); s.innerHTML = `<div class="sheet" onclick="event.stopPropagation()"><div class="grab"></div>${html}</div>`; s.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeSheet(){ const s = $('#sheet'); s.classList.add('hidden'); s.innerHTML = ''; document.body.style.overflow = ''; S.openId = null; }
+function closeSheet(){ recCleanup(); const s = $('#sheet'); s.classList.add('hidden'); s.innerHTML = ''; document.body.style.overflow = ''; S.openId = null; }
 $('#sheet').addEventListener('click', closeSheet);
 
 function leadSheet(l){
@@ -786,8 +837,12 @@ function leadSheet(l){
   <h3>سجّل المكالمة</h3>
   <div class="card">
     <div class="st-grid">${CALL_STATUSES.map(k => `<label style="--c:${STATUSES[k].color}"><input type="radio" name="st" value="${k}" onchange="App.stChange()"><span style="--c:${STATUSES[k].color}">${STATUSES[k].label}</span></label>`).join('')}</div>
-    <label class="f">العميل قال إيه؟ (أي طلب أو تفصيلة)</label>
+    <label class="f">العميل قال إيه؟ اكتب أو سجّل فويس</label>
     <textarea class="in" id="note" placeholder="مثلاً: عايز 3 أوض، ميزانيته 5 مليون، طالب عرض تقسيط..."></textarea>
+    <div class="voice-row">
+      <div id="recBox">${recHTML()}</div>
+      ${SpeechRec ? `<button type="button" class="btn ghost mini" id="dicBtn" onclick="App.dictate()">اتكلم ويتكتب لوحده</button>` : ''}
+    </div>
     <div id="fuBox">
       <label class="f">ميعاد المتابعة الجاية <span class="muted" id="fuReq">(اختياري)</span></label>
       <div class="quick">
@@ -817,7 +872,7 @@ function leadSheet(l){
     return `<div class="tl-i" style="--c:${isAssign ? '#94A3B8' : s ? s.color : '#94A3B8'}">
       <div><b>${esc(h.byName || '')}</b> · ${isAssign ? 'تحويل' : esc(s ? s.label : h.status)}</div>
       <div class="t">${fmt(h.at)}${h.nextFollowUp ? ' · المتابعة: ' + fmt(h.nextFollowUp) : ''}</div>
-      ${h.note ? `<div class="note">${esc(h.note)}</div>` : ''}
+      ${h.note ? `<div class="note">${esc(h.note)}</div>` : ''}${voiceBtn(h.voice)}
     </div>`; }).join('')}</div>` : `<div class="card muted" style="text-align:center">لسه محدش كلّم العميل ده</div>`}
 
   ${isBoss() ? `<div style="margin-top:18px;text-align:center"><button class="btn danger" id="delBtn" onclick="App.del()">امسح العميل</button></div>` : ''}`;
@@ -987,7 +1042,7 @@ function activityView(){
     if(a.type === 'call'){ const s = STATUSES[a.status] || {label:a.status, color:'#64748B'};
       return `<div class="act"><div class="ic" style="color:${s.color}">${ICON.phone.replace('<svg', '<svg width="18" height="18"')}</div><div class="tx">
         <b>${esc(a.byName)}</b> كلّم <a href="javascript:void 0" onclick="App.open('${a.leadId}')" style="color:var(--navy);font-weight:700">${esc(a.leadName || 'عميل')}</a> — <span style="color:${s.color};font-weight:700">${s.label}</span>
-        ${a.note ? `<div class="note">${esc(a.note)}</div>` : ''}<div class="t">${fmt(a.at)} · ${ago(a.at)}</div></div></div>`; }
+        ${a.note ? `<div class="note">${esc(a.note)}</div>` : ''}${voiceBtn(a.voice)}<div class="t">${fmt(a.at)} · ${ago(a.at)}</div></div></div>`; }
     if(a.type === 'assign') return `<div class="act"><div class="ic">⇄</div><div class="tx">${esc(a.note)}<div class="t">${fmt(a.at)}</div></div></div>`;
     return `<div class="act"><div class="ic">${ICON.upload.replace('<svg', '<svg width="18" height="18"')}</div><div class="tx">${esc(a.byName)}: ${esc(a.note)}<div class="t">${fmt(a.at)}</div></div></div>`;
   };
@@ -1026,7 +1081,56 @@ const App = window.App = {
   resetDemo(){ store.resetDemo(); toast('رجعت البيانات التجريبية'); render(); },
   logout(){ store.signOut(); },
 
-  open(id){ const l = leadById(id); if(!l) return toast('العميل ده مش متاح'); S.openId = id; openSheet(leadSheet(l)); },
+  open(id){ const l = leadById(id); if(!l) return toast('العميل ده مش متاح'); recCleanup(); S.openId = id; openSheet(leadSheet(l)); },
+  async recStart(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('الجهاز أو المتصفح ده مش بيدعم تسجيل الصوت');
+    if(S.dic) App.dictate();
+    let stream;
+    try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ return toast('لازم تسمح للميكروفون عشان تسجّل فويس'); }
+    const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+    let mr;
+    try{ mr = new MediaRecorder(stream, mime ? {mimeType:mime, audioBitsPerSecond:24000} : {audioBitsPerSecond:24000}); }
+    catch(e){ mr = new MediaRecorder(stream); }
+    const chunks = [], rec = {mr, stream, start:Date.now(), recording:true};
+    mr.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = () => {
+      clearInterval(rec.timer); stream.getTracks().forEach(t => t.stop());
+      if(rec.discard || S.rec !== rec) return;
+      const type = (mr.mimeType || mime || 'audio/webm').split(';')[0];
+      rec.blob = new Blob(chunks, {type}); rec.mime = type; rec.recording = false;
+      rec.dur = Math.max(1, Math.round((Date.now() - rec.start) / 1000));
+      rec.url = URL.createObjectURL(rec.blob);
+      if(rec.blob.size > 4.5e6){ toast('الفويس كبير قوي، سجّل أقصر'); App.recClear(); return; }
+      renderRec();
+    };
+    rec.timer = setInterval(() => {
+      const sec = Math.round((Date.now() - rec.start) / 1000), t = $('#recTime'); if(t) t.textContent = mmss(sec);
+      if(sec >= MAX_REC_SEC){ toast('وصلت لأقصى مدة (3 دقايق)'); App.recStop(); }
+    }, 500);
+    S.rec = rec; mr.start(1000); renderRec();
+  },
+  recStop(){ const r = S.rec; if(r && r.mr && r.mr.state === 'recording') r.mr.stop(); },
+  recClear(){ const r = S.rec; if(r && r.url) URL.revokeObjectURL(r.url); S.rec = null; renderRec(); },
+  dictate(){
+    if(!SpeechRec) return;
+    if(S.dic){ try{ S.dic.stop(); }catch(e){} S.dic = null; const d = $('#dicBtn'); if(d){ d.classList.remove('listening'); d.textContent = 'اتكلم ويتكتب لوحده'; } return; }
+    const r = new SpeechRec(); r.lang = 'ar-EG'; r.continuous = true; r.interimResults = false;
+    r.onresult = e => { const ta = $('#note'); if(!ta) return; for(let i = e.resultIndex; i < e.results.length; i++) if(e.results[i].isFinal) ta.value = (ta.value ? ta.value.trim() + ' ' : '') + e.results[i][0].transcript.trim(); };
+    r.onerror = e => { if(e.error === 'not-allowed') toast('لازم تسمح للميكروفون'); };
+    r.onend = () => { if(S.dic === r){ S.dic = null; const d = $('#dicBtn'); if(d){ d.classList.remove('listening'); d.textContent = 'اتكلم ويتكتب لوحده'; } } };
+    try{ r.start(); }catch(e){ return toast('مش قادر أشغّل الكتابة بالصوت'); }
+    S.dic = r; const d = $('#dicBtn'); if(d){ d.classList.add('listening'); d.textContent = '● بيسمعك... دوس عشان توقف'; }
+  },
+  async play(btn, id, n, mime){
+    const box = btn.parentElement; btn.disabled = true; btn.textContent = 'بيحمّل...';
+    try{
+      const b64 = await store.loadVoice(id, n);
+      if(!b64) throw {message:'الفويس مش موجود'};
+      const url = URL.createObjectURL(b64ToBlob(b64, mime));
+      box.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
+    }catch(e){ btn.disabled = false; btn.textContent = '▶ اسمع الفويس'; toast(fbError(e)); }
+  },
   close(){ closeSheet(); },
   stChange(){
     const v = (document.querySelector('input[name=st]:checked') || {}).value;
@@ -1049,12 +1153,19 @@ const App = window.App = {
     if(!status) return toast('اختار نتيجة المكالمة الأول');
     if(status === 'followup' && !fu) return toast('حدد ميعاد المتابعة');
     if(!OPEN.has(status)) fu = null;
+    if(S.rec && S.rec.recording) return toast('وقّف تسجيل الفويس الأول');
     const b = $('#saveBtn'); b.disabled = true; b.textContent = 'بيحفظ...';
     const now = Date.now();
     const hist = {at:now, by:S.me.uid, byName:S.me.name, status, note, nextFollowUp:fu};
     try{
+      if(S.rec && S.rec.blob){
+        b.textContent = 'بيرفع الفويس...';
+        const b64 = await blobToB64(S.rec.blob);
+        const v = await store.saveVoice(b64, {by:S.me.uid, leadId:l.id, at:now, mime:S.rec.mime, dur:S.rec.dur});
+        hist.voice = {id:v.id, n:v.n, dur:S.rec.dur, mime:S.rec.mime};
+      }
       await store.updateLeads([l.id], {status, lastContactAt:now, nextFollowUp:fu, callCount:(l.callCount || 0) + 1}, hist);
-      await store.addActivity({type:'call', at:now, by:S.me.uid, byName:S.me.name, leadId:l.id, leadName:l.name || '', status, note, assignedTo:l.assignedTo || null, teamId:l.teamId || null});
+      await store.addActivity({type:'call', at:now, by:S.me.uid, byName:S.me.name, leadId:l.id, leadName:l.name || '', status, note, voice:hist.voice || null, assignedTo:l.assignedTo || null, teamId:l.teamId || null});
       closeSheet(); toast('اتسجّلت ✓');
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'حفظ'; }
   },
