@@ -265,7 +265,11 @@ const ROLE_RANK = {admin:0, manager:1, leader:2, sales:3};
 const BOSS_ROLES = ['admin','manager'];
 const MAX_REC_SEC = 180;   // أقصى مدة للفويس: 3 دقايق
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-const SOURCES = {facebook:'فيسبوك', instagram:'إنستجرام', dubizzle:'دوبيزل', propertyfinder:'بروبرتي فايندر', aqarmap:'عقار ماب', sheet:'شيت داتا', referral:'ترشيح', walkin:'زيارة للمكتب', other:'تاني'};
+const SOURCES = {facebook:'فيسبوك', instagram:'إنستجرام', dubizzle:'دوبيزل', propertyfinder:'بروبرتي فايندر', aqarmap:'عقار ماب', sheet:'شيت داتا', referral:'ترشيح', walkin:'زيارة للمكتب', broker:'بروكر / شركة تانية', other:'تاني'};
+const brokerFields = (pre, l) => `<div id="${pre}BrW" class="row ${l && l.source === 'broker' ? '' : 'hidden'}">
+  <div><label class="f">اسم البروكر / الشركة</label><input class="in" id="${pre}BrN" value="${esc((l && l.brokerName) || '')}"></div>
+  <div><label class="f">رقم البروكر</label><input class="in" id="${pre}BrP" dir="ltr" inputmode="tel" value="${esc((l && l.brokerPhone) || '')}"></div></div>`;
+const brokerVal = (pre, src) => src === 'broker' ? {brokerName:($('#' + pre + 'BrN') || {}).value ? $('#' + pre + 'BrN').value.trim() : '', brokerPhone:($('#' + pre + 'BrP') || {}).value ? $('#' + pre + 'BrP').value.trim() : ''} : {brokerName:null, brokerPhone:null};
 const CLIENT_TYPES = {owner_rent:'مالك عايز يأجّر', owner_sale:'مالك عايز يبيع', tenant:'عايز يأجّر (مستأجر)', buyer:'عايز يشتري'};
 const FURNISH = {furnished:'مفروش', empty:'فاضي'};
 const DEALS = {short:'إيجار قصير (أيام / شهور)', annual:'إيجار سنة أو أكتر', sale:'بيع'};
@@ -402,8 +406,9 @@ function newLeadSheet(){
     </div>
     <div class="row">
       <div><label class="f">نوع العميل</label><select class="sel" id="nlCt" style="margin:0" onchange="$('#nlFurnW').classList.toggle('hidden', !['owner_rent','tenant'].includes(this.value))"><option value="">—</option>${opts(CLIENT_TYPES, '')}</select></div>
-      <div><label class="f">مصدر العميل</label><select class="sel" id="nlSrc" style="margin:0"><option value="">—</option>${opts(SOURCES, '')}</select></div>
+      <div><label class="f">مصدر العميل</label><select class="sel" id="nlSrc" style="margin:0" onchange="$('#nlBrW').classList.toggle('hidden', this.value !== 'broker')"><option value="">—</option>${opts(SOURCES, '')}</select></div>
     </div>
+    ${brokerFields('nl', null)}
     <div id="nlFurnW" class="hidden"><label class="f">الإيجار</label><select class="sel" id="nlFurn" style="margin:0"><option value="">—</option>${opts(FURNISH, '')}</select></div>
     <div class="row">
       <div><label class="f">المشروع</label><input class="in" id="nlProj"></div>
@@ -419,6 +424,37 @@ function newLeadSheet(){
 /* ---------------- الوحدات ---------------- */
 const UNIT_CAP = 400;           // عدد الوحدات في كل صفحة تخزين
 const MAX_PHOTOS = 10;
+const LAYOUT_DOC = 'meta_layouts';   // اللي أوت بتاع كل مشروع (متخزن جنب صفحات الوحدات)
+const MAX_LAYOUTS = 3;
+const STAFF_DOC = 'meta_staff';     // اسم ورقم وصورة كل موظف — بيشوفها الكل عشان الإعلانات وزرار المعاينة
+// أسماء المشاريع: العربي والإنجليزي بيتحسبوا مشروع واحد ("جنة زايد 2" = "Janna Zayed 2")
+const AR_NORM = t => String(t || '').replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+  .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+const PROJ_WORDS = (() => {
+  const src = {
+    'جنة':'janna', 'جنه':'janna', 'زايد':'zayed', 'اكتوبر':'october', 'أكتوبر':'october', 'الشيخ':'sheikh', 'شيخ':'sheikh', 'الجديدة':'new', 'نيو':'new',
+    'ويست':'west', 'ايست':'east', 'سوديك':'sodic', 'بيفرلي':'beverly', 'بيفرلى':'beverly', 'هيلز':'hills', 'هيلس':'hills',
+    'اليجريا':'allegria', 'أليجريا':'allegria', 'الليجريا':'allegria', 'زيد':'zed', 'اي':'i', 'آي':'i', 'سيتي':'city', 'سيتى':'city', 'ستي':'city',
+    'تشيل':'chill', 'شيل':'chill', 'اوت':'out', 'آوت':'out', 'او':'o', 'بادية':'badya', 'باديه':'badya', 'بالم':'palm', 'فيليدج':'village', 'فيلدج':'village', 'فيلاج':'village',
+    'سولانا':'solana', 'ذا':'the', 'ادريس':'address', 'أدريس':'address', 'كازا':'casa', 'ايتابا':'etapa', 'إيتابا':'etapa', 'ويستاون':'westown', 'ديونز':'dunes',
+    'بيل':'belle', 'في':'vie', 'فى':'vie', 'كارما':'karma', 'كرمة':'karma', 'كرمه':'karma', 'ربوة':'rabwa', 'ربوه':'rabwa', 'رويال':'royal', 'ماونتن':'mountain', 'ماونتين':'mountain',
+    'فيو':'view', 'ريزيدنس':'residence', 'ريزدنس':'residence', 'ميدتاون':'midtown', 'جيريان':'jirian', 'تاورز':'towers', 'بارك':'park', 'نيوم':'nyoum', 'نيوام':'nyoum',
+    'كيان':'kayan', 'باتيو':'patio', 'زهراء':'zahra', 'زهرا':'zahra', 'لافيستا':'lavista', 'فيستا':'vista', 'لا':'la', 'استيتس':'estates', 'اوراسكوم':'orascom',
+    'سيلفر':'silver', 'ساندز':'sands', 'ليك':'lake', 'هايتس':'heights', 'جراند':'grand', 'جاردنز':'gardens', 'جاردن':'garden', 'تاج':'taj', 'اوبرا':'opera', 'تيامو':'tiamo',
+    'مينا':'mina', 'كمبوند':'', 'كومباوند':'', 'كمباوند':'', 'مشروع':''
+  };
+  const o = {}; Object.entries(src).forEach(([a, e]) => o[AR_NORM(a)] = e); return o;
+})();
+function projCanon(p){
+  const words = AR_NORM(String(p || '').toLowerCase()).replace(/([0-9])([^0-9\s])|([^0-9\s])([0-9])/g, '$1$3 $2$4').split(/[^a-z0-9؀-ۿ]+/).filter(Boolean);
+  return words.map(w => {
+    if(!/[؀-ۿ]/.test(w)) return w;
+    if(w in PROJ_WORDS) return PROJ_WORDS[w];
+    if(w.startsWith('ال') && (w.slice(2) in PROJ_WORDS)) return 'el' + PROJ_WORDS[w.slice(2)];
+    return w;
+  }).join('');
+}
+function projKey(p){ let k = projCanon(p); for(let i = 0; i < 5 && k && S.aliases && S.aliases[k]; i++) k = S.aliases[k]; return k; }
 const UNIT_STATUS = {available:'متاحة', rented:'متأجرة', sold:'اتباعت', hold:'محجوزة / موقوفة'};
 const PURPOSE = {sale:'بيع', rent:'إيجار', both:'بيع وإيجار'};
 const PURPOSE_COLOR = {sale:'#0F766E', rent:'#1E5BB8', both:'#7C3AED'};
@@ -431,7 +467,11 @@ const newUid = () => 'u' + Math.random().toString(36).slice(2, 10) + Date.now().
 function myUnitsScope(u){ return isBoss() ? true : isLeader() ? (u.teamId === S.me.uid || u.agentId === S.me.uid) : u.agentId === S.me.uid; }
 function setUnits(pages){
   S.unitPages = {}; const all = [];
+  S.layouts = (pages && pages[LAYOUT_DOC] && pages[LAYOUT_DOC].layouts) || {};
+  S.staff = (pages && pages[STAFF_DOC] && pages[STAFF_DOC].staff) || {};
+  S.aliases = {}; Object.entries((pages && pages[LAYOUT_DOC] && pages[LAYOUT_DOC].aliases) || {}).forEach(([k, v]) => { if(v && v !== k) S.aliases[k] = v; });
   Object.entries(pages || {}).forEach(([pid, p]) => {
+    if(pid.startsWith('meta_')) return;
     const us = (p && p.units) || {}; S.unitPages[pid] = Object.keys(us).length;
     Object.entries(us).forEach(([id, u]) => all.push({...u, id, page:pid}));
   });
@@ -515,6 +555,188 @@ function unitShareText(u){
   L.push('Blue Real Estate');
   return L.join('\n');
 }
+/* ---------- اللوكيشن ---------- */
+const mapsUrl = l => `https://www.google.com/maps?q=${l.lat},${l.lng}`;
+function unitLocBlock(u){
+  const l = u.loc, can = canEditUnit(u);
+  if(!l && !can) return '';
+  return `<div class="card" style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div style="flex:1;min-width:140px"><b>📍 اللوكيشن</b><div class="muted" style="font-size:12.5px">${l ? `اتسجل ${new Date(l.at).toLocaleDateString('ar-EG')}${l.byName ? ' · ' + esc(l.byName) : ''}` : 'لسه متسجلش — خده وانت واقف عند الوحدة'}</div></div>
+    ${l ? `<a class="btn ghost mini" href="${mapsUrl(l)}" target="_blank" rel="noopener">افتح على الخريطة</a>` : ''}
+    ${can ? `<button class="btn mini" id="locBtn" onclick="App.grabLoc('${u.id}')">${l ? 'حدّث من مكاني' : 'خد اللوكيشن من مكاني'}</button>` : ''}
+  </div>`;
+}
+function getPosition(){
+  return new Promise((res, rej) => {
+    if(!navigator.geolocation) return rej({message:'الموبايل ده مش بيدعم تحديد المكان'});
+    navigator.geolocation.getCurrentPosition(p => res({lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6), acc:Math.round(p.coords.accuracy || 0)}),
+      e => rej({message: e && e.code === 1 ? 'لازم تسمح للأبليكيشن يعرف مكانك من إعدادات الموبايل' : 'مقدرتش أحدد المكان — اتأكد إن الـ GPS شغال وجرّب تاني'}),
+      {enableHighAccuracy:true, timeout:20000, maximumAge:0});
+  });
+}
+/* ---------- اللي أوت بتاع المشروع ---------- */
+const canLayout = () => isBoss() || isLeader();
+function unitLayoutBlock(u){
+  const key = projKey(u.project); if(!key) return '';
+  const L = S.layouts[key], n = L && L.photos ? L.photos.length : 0;
+  if(!n && !canLayout()) return '';
+  return `<div class="card" style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div style="flex:1;min-width:140px"><b>🗺️ اللي أوت</b><div class="muted" style="font-size:12.5px">${n ? `${n} صورة لمشروع ${esc(L.name || u.project)}` : `لسه مفيش لي أوت لمشروع ${esc(u.project)}`}</div></div>
+    ${n ? `<button class="btn ghost mini" onclick="App.viewLayout('${key}', 0)">شوف اللي أوت</button>` : ''}
+    ${canLayout() && n < MAX_LAYOUTS ? `<label class="btn mini">＋ ارفع لي أوت<input type="file" accept="image/*" multiple class="hidden" onchange="App.addLayout('${u.id}', this.files)"></label>` : ''}
+    ${canLayout() ? `<button class="btn ghost mini" onclick="App.aliasSheet('${u.id}')">${projCanon(u.project) !== key ? '🔗 مربوط — تعديل' : '🔗 نفس مشروع تاني؟'}</button>` : ''}
+  </div>
+  <div id="lyStatus" class="muted" style="font-size:12.5px"></div>`;
+}
+async function processLayout(file){
+  const url = URL.createObjectURL(file);
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  let max = 2000, out = '';
+  for(let t = 0; t < 4; t++){
+    const sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * sc), h = Math.round(img.naturalHeight * sc);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
+    let q = 0.82; out = c.toDataURL('image/jpeg', q);
+    while(out.length > 900000 && q > 0.4){ q -= 0.08; out = c.toDataURL('image/jpeg', q); }
+    if(out.length <= 900000) break;
+    max = Math.round(max * 0.75);
+  }
+  URL.revokeObjectURL(url);
+  return out.split(',')[1];
+}
+/* ---------- بيانات الموظفين (الاسم والرقم والصورة) ---------- */
+function staffInfo(uid){
+  if(!uid) return {};
+  const m = S.staff[uid] || {}, u = S.users[uid] || (S.me && S.me.uid === uid ? S.me : null) || {};
+  return {uid, name:u.name || m.name || '', phone:u.phone || m.phone || '', photo:m.photo || '', role:u.role || m.role || '', leaderId:(u.leaderId !== undefined ? u.leaderId : m.leaderId) || null};
+}
+function avatarHtml(uid, size = 34){
+  const i = staffInfo(uid);
+  return i.photo ? `<img src="${i.photo}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex:none">`
+    : `<span style="width:${size}px;height:${size}px;border-radius:50%;background:#E2E8F0;color:var(--navy);display:inline-flex;align-items:center;justify-content:center;font-weight:800;flex:none">${esc((i.name || '؟').trim().charAt(0))}</span>`;
+}
+async function processAvatar(file){
+  const url = URL.createObjectURL(file);
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  const side = Math.min(img.naturalWidth, img.naturalHeight), sz = 240;
+  const c = document.createElement('canvas'); c.width = sz; c.height = sz;
+  c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, sz, sz);
+  URL.revokeObjectURL(url);
+  return c.toDataURL('image/jpeg', 0.8);
+}
+const waNum = p => { let d = String(p || '').replace(/\D/g, ''); if(d.startsWith('00')) d = d.slice(2); if(d.startsWith('0') && d.length === 11) d = '2' + d; return d; };
+/* ---------- كارت الإعلان (صورة فيها الوحدة والسيلز) ---------- */
+const loadImg = src => new Promise(res => { if(!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+async function makeAdCard(u){
+  try{ if(document.fonts && document.fonts.load) await Promise.all([document.fonts.load('800 60px Cairo'), document.fonts.load('600 40px Cairo')]); }catch(e){}
+  const W = 1080, H = 1350, TOP = 760, BAND = 1095;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'); x.direction = 'rtl';
+  const NAVY = '#0B2A5B', F = (w, s) => `${w} ${s}px Cairo, system-ui, sans-serif`;
+  const fit = (t, w, s, max) => { let z = s; x.font = F(w, z); while(x.measureText(t).width > max && z > 24){ z -= 2; x.font = F(w, z); } return z; };
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  // الصورة
+  const ph = (u.photos || [])[0] ? await loadImg(await loadPhotoURL(u.photos[0]).catch(() => '')) : null;
+  const logo = await wmImage();
+  if(ph){
+    const sc = Math.max(W / ph.width, TOP / ph.height), dw = ph.width * sc, dh = ph.height * sc;
+    x.drawImage(ph, (W - dw) / 2, (TOP - dh) / 2, dw, dh);
+  }else{
+    const g = x.createLinearGradient(0, 0, W, TOP); g.addColorStop(0, '#123A7A'); g.addColorStop(1, NAVY); x.fillStyle = g; x.fillRect(0, 0, W, TOP);
+    if(logo){ const r = logo.height / logo.width, bw = 380; x.globalAlpha = 0.9; x.drawImage(logo, (W - bw) / 2, (TOP - bw * r) / 2, bw, bw * r); x.globalAlpha = 1; }
+  }
+  // شارة بيع / إيجار
+  const badge = {sale:'للبيع', rent:'للإيجار', both:'للبيع أو الإيجار'}[u.purpose];
+  if(badge){ x.font = F(800, 46); const bw = x.measureText(badge).width + 64; x.fillStyle = PURPOSE_COLOR[u.purpose] || NAVY;
+    x.beginPath(); x.roundRect ? x.roundRect(40, 40, bw, 84, 42) : x.rect(40, 40, bw, 84); x.fill();
+    x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(badge, 40 + bw / 2, 84); }
+  // التفاصيل
+  const tKey = String(u.type || '').toLowerCase().trim(), type = AD_TYPE_AR[tKey] || u.type || 'وحدة';
+  const proj = [u.project, u.phase].map(v => String(v || '').trim()).filter(Boolean).join(' – ');
+  x.textAlign = 'right'; x.textBaseline = 'alphabetic'; x.fillStyle = NAVY;
+  const title = `${type}${proj ? ' في ' + proj : ''}`; fit(title, 800, 62, W - 80); x.fillText(title, W - 40, TOP + 92);
+  const size = [];
+  if(adClean(u.bua)) size.push(`${adClean(u.bua)} م²`);
+  if(String(u.bedrooms || '').trim()) size.push(`${u.bedrooms} غرف`);
+  if(String(u.bathrooms || '').trim()) size.push(`${u.bathrooms} حمام`);
+  if(adClean(u.land)) size.push(`جاردن ${adClean(u.land)} م²`);
+  const fin = [adFinish(u.finishing, true), u.furnished === 'furnished' ? 'مفروش' : '', /ready|فوري/i.test(u.delivery || '') ? 'استلام فوري' : (u.delivery ? 'استلام ' + u.delivery : '')].filter((v, i, a) => v && a.indexOf(v) === i);
+  x.fillStyle = '#334155';
+  if(size.length){ const t = size.join('  ·  '); fit(t, 600, 42, W - 80); x.fillText(t, W - 40, TOP + 160); }
+  if(fin.length){ const t = fin.join('  ·  '); fit(t, 600, 36, W - 80); x.fillStyle = '#64748B'; x.fillText(t, W - 40, TOP + 215); }
+  const pr = adNum(u.price);
+  if(pr){ const t = /^[\d,]+$/.test(pr) ? `${pr} جنيه` : pr; x.fillStyle = PURPOSE_COLOR[u.purpose] || NAVY; fit(t, 800, 68, W - 80); x.fillText(t, W - 40, TOP + 300); }
+  // شريط السيلز
+  x.fillStyle = NAVY; x.fillRect(0, BAND, W, H - BAND);
+  const ct = adContact(u), cy = BAND + (H - BAND) / 2, R = 92, cx = W - 50 - R;
+  x.save(); x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.closePath(); x.fillStyle = '#E2E8F0'; x.fill(); x.clip();
+  const av = await loadImg(ct.photo);
+  if(av) x.drawImage(av, cx - R, cy - R, R * 2, R * 2);
+  else{ x.fillStyle = NAVY; x.font = F(800, 90); x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText((ct.name || 'B').trim().charAt(0), cx, cy + 4); }
+  x.restore();
+  x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.lineWidth = 6; x.strokeStyle = '#fff'; x.stroke();
+  const tx = cx - R - 30;
+  x.textAlign = 'right'; x.textBaseline = 'alphabetic'; x.fillStyle = '#fff';
+  fit(ct.name || '', 800, 52, tx - 300); x.fillText(ct.name || '', tx, cy - 8);
+  if(ct.phone){ x.font = F(700, 46); x.direction = 'ltr'; x.textAlign = 'right'; x.fillStyle = '#CFE0FF'; x.fillText('☎ ' + ct.phone, tx, cy + 58); x.direction = 'rtl'; }
+  if(logo){ const r = logo.height / logo.width, lw = 150; x.drawImage(logo, 50, cy - lw * r / 2 - 14, lw, lw * r); }
+  x.direction = 'ltr'; x.textAlign = 'left'; x.fillStyle = '#fff'; x.font = '700 30px Georgia, serif'; x.fillText('Blue Real Estate', 40, H - 22);
+  return c.toDataURL('image/jpeg', 0.88);
+}
+/* ---------- الإعلان ---------- */
+const AD_TYPE_AR = {'apartment':'شقة','villa':'فيلا','i villa':'آي فيلا','ivilla':'آي فيلا','park villa':'بارك فيلا','townhouse':'تاون هاوس','town house':'تاون هاوس',
+  'twin house':'توين هاوس','twinhouse':'توين هاوس','duplex':'دوبلكس','penthouse':'بنتهاوس','studio':'ستوديو','chalet':'شاليه','shalee':'شاليه','office':'مكتب',
+  'clinic':'عيادة','shop':'محل','retail':'محل تجاري','retal':'محل تجاري','stand alone':'فيلا مستقلة','standalone':'فيلا مستقلة','loft':'لوفت','sky loft':'سكاي لوفت','land':'أرض'};
+const AD_TYPE_EN = {'retal':'Retail','shalee':'Chalet','ivilla':'iVilla','i villa':'iVilla'};
+function adNum(v){
+  const t = String(v ?? '').trim(); if(!t) return '';
+  if(/^[\d.,\s]+$/.test(t)){ const d = t.replace(/[^\d]/g, ''); if(d.length >= 4) return Number(d).toLocaleString('en-US'); }
+  return t;
+}
+const adClean = v => String(v ?? '').trim().replace(/m²?$|م²?$/i, '').trim();
+function adFinish(f, ar){
+  const s = String(f || '').toLowerCase().trim(); if(!s) return '';
+  if(!ar) return String(f).trim();
+  if(/furnish/.test(s)) return 'مفروش';
+  if(/with ac|ac's|acs/.test(s)) return 'تشطيب كامل بالتكييفات';
+  if(/fully|full|super lux|ultra/.test(s)) return 'تشطيب كامل';
+  if(/semi|half/.test(s)) return 'نص تشطيب';
+  if(/core|shell/.test(s)) return 'من غير تشطيب (Core & Shell)';
+  return String(f).trim();
+}
+function adContact(u){   // الإعلان دايمًا باسم ورقم وصورة اللي بيعمله، حتى لو الوحدة بتاعة زميله
+  const me = staffInfo(S.me.uid);
+  return {name:me.name || S.me.name, phone:me.phone || '', photo:me.photo || ''};
+}
+function unitAdText(u, lang){
+  const ar = lang === 'ar', c = adContact(u);
+  const tKey = String(u.type || '').toLowerCase().trim();
+  const type = ar ? (AD_TYPE_AR[tKey] || u.type || 'وحدة') : (AD_TYPE_EN[tKey] || u.type || 'Unit');
+  const purp = ar ? {sale:'للبيع', rent:'للإيجار', both:'للبيع أو الإيجار'}[u.purpose] : {sale:'for Sale', rent:'for Rent', both:'for Sale or Rent'}[u.purpose];
+  const proj = [u.project, u.phase].map(x => String(x || '').trim()).filter(Boolean).join(' – ');
+  const L = [];
+  L.push(`🏡 ${[type, purp].filter(Boolean).join(' ')}${proj ? (ar ? ' في ' : ' in ') + proj : ''}`);
+  const size = [];
+  if(adClean(u.bua)) size.push(ar ? `${adClean(u.bua)} م²` : `${adClean(u.bua)} m²`);
+  if(String(u.bedrooms || '').trim()) size.push(ar ? `${u.bedrooms} غرف` : `${u.bedrooms} Bedrooms`);
+  if(String(u.bathrooms || '').trim()) size.push(ar ? `${u.bathrooms} حمام` : `${u.bathrooms} Bathrooms`);
+  if(adClean(u.land)) size.push(ar ? `جاردن ${adClean(u.land)} م²` : `Garden ${adClean(u.land)} m²`);
+  if(size.length) L.push('📐 ' + size.join(' · '));
+  if(String(u.floor || '').trim()) L.push(ar ? `🏢 الدور: ${String(u.floor).trim()}` : `🏢 Floor: ${String(u.floor).trim()}`);
+  const fin = [];
+  const f = adFinish(u.finishing, ar); if(f && !(ar && f === 'مفروش' && u.furnished === 'furnished')) fin.push(f);
+  if(u.furnished === 'furnished') fin.push(ar ? 'مفروش' : 'Furnished');
+  else if(u.furnished === 'empty' && (u.purpose === 'rent' || u.purpose === 'both')) fin.push(ar ? 'فاضي' : 'Unfurnished');
+  const del = String(u.delivery || '').trim();
+  if(del) fin.push(/ready|فوري/i.test(del) ? (ar ? 'استلام فوري' : 'Ready to move') : (ar ? `استلام ${del}` : `Delivery ${del}`));
+  if(fin.length) L.push('✨ ' + fin.join(' · '));
+  const pr = adNum(u.price), dp = adNum(u.downPayment), numeric = /^[\d,]+$/.test(pr);
+  if(pr) L.push(ar ? `💰 السعر: ${pr}${numeric ? ' جنيه' : ''}${dp ? ' · المقدم: ' + dp : ''}` : `💰 Price: ${numeric ? 'EGP ' : ''}${pr}${dp ? ' · Down payment: ' + dp : ''}`);
+  L.push(ar ? `📞 للتواصل: ${c.name}${c.phone ? ' – ' + c.phone : ''}` : `📞 Call / WhatsApp: ${c.phone || ''}`);
+  L.push('Blue Real Estate');
+  return L.join('\n');
+}
 function unitSheet(u){
   const photos = u.photos || [];
   const row = (k, v) => v ? `<div><span>${k}</span>${esc(v)}</div>` : '';
@@ -530,6 +752,9 @@ function unitSheet(u){
     ${photos.length ? `<button class="btn ghost" onclick="App.sharePhotos('${u.id}')">شارك الصور للعميل</button>` : ''}
     <button class="btn ghost" onclick="App.shareUnitText('${u.id}')">شارك التفاصيل</button>
   </div>
+  <button class="btn block" style="margin-top:8px" onclick="App.adSheet('${u.id}')">📣 اعمل إعلان (عربي + English)</button>
+  ${unitLocBlock(u)}
+  ${unitLayoutBlock(u)}
 
   <div class="card details" style="margin-top:12px">
     ${row('المشروع', [u.project, u.phase].filter(Boolean).join(' — '))}${row('رقم الوحدة', u.unitNo)}
@@ -579,6 +804,12 @@ function unitFormSheet(u, owner, pre){
     </div>
     <div class="muted" style="font-size:12px;margin-top:4px">لو الوحدة متأجرة وحددت يوم ما هتفضى، السيستم هيفكّرك قبلها بيومين في صفحة النهارده وصفحة الوحدات.</div>
     <label class="f">ملاحظات</label><textarea class="in" id="uNotes" style="min-height:60px">${v('notes')}</textarea>
+    <label class="f">📍 اللوكيشن</label>
+    <input type="hidden" id="uLoc" value="${esc(u.loc ? JSON.stringify(u.loc) : '')}">
+    <div class="row" style="align-items:center">
+      <div id="uLocTxt" class="muted" style="font-size:12.5px">${u.loc ? `متسجل ✓ <a href="${mapsUrl(u.loc)}" target="_blank" rel="noopener">شوفه</a>` : 'لو انت واقف عند الوحدة دلوقتي، خد اللوكيشن'}</div>
+      <button type="button" class="btn ghost mini" id="uLocBtn" onclick="App.formLoc()">${u.loc ? 'حدّث من مكاني' : 'خد اللوكيشن من مكاني'}</button>
+    </div>
     <h3 style="margin-top:16px">المالك 🔒</h3>
     <div class="muted" style="font-size:12px">بيظهر بس للسيلز بتاع الوحدة والتيم ليدر بتاعه والمديرين.</div>
     <div class="row">${inp('uOName', 'اسم المالك', esc(owner.ownerName ?? pre.ownerName ?? ''))}${inp('uOPhone', 'رقم المالك', esc(owner.ownerPhone ?? pre.ownerPhone ?? ''), 'dir="ltr" inputmode="tel"')}</div>
@@ -833,11 +1064,14 @@ function makeDemoStore(){
     onUnits(cb){ return sub(() => cb(clone(db.unitPages || {}))); },
     async addUnit(id, data){
       db.unitPages = db.unitPages || {};
-      let pid = Object.keys(db.unitPages).find(p => Object.keys(db.unitPages[p].units).length < UNIT_CAP);
+      let pid = Object.keys(db.unitPages).find(p => !p.startsWith('meta_') && Object.keys(db.unitPages[p].units || {}).length < UNIT_CAP);
       if(!pid){ pid = 'p' + uid(); db.unitPages[pid] = {units:{}}; }
       db.unitPages[pid].units[id] = clone(data); persist();
     },
     async saveUnit(pid, id, data){ Object.assign(db.unitPages[pid].units[id], clone(data)); persist(); },
+    async setStaff(uid, entry){ db.unitPages = db.unitPages || {}; const d = db.unitPages[STAFF_DOC] = db.unitPages[STAFF_DOC] || {units:{}, staff:{}}; d.staff = d.staff || {}; d.staff[uid] = {...(d.staff[uid] || {}), ...clone(entry)}; persist(); },
+    async setAlias(from, to){ db.unitPages = db.unitPages || {}; const d = db.unitPages[LAYOUT_DOC] = db.unitPages[LAYOUT_DOC] || {units:{}, layouts:{}}; d.aliases = d.aliases || {}; d.aliases[from] = to || null; persist(); },
+    async setLayout(key, entry){ db.unitPages = db.unitPages || {}; const d = db.unitPages[LAYOUT_DOC] = db.unitPages[LAYOUT_DOC] || {units:{}, layouts:{}}; d.layouts = d.layouts || {}; d.layouts[key] = clone(entry); persist(); },
     async deleteUnit(pid, id){ delete db.unitPages[pid].units[id]; delete db.owners[id]; persist(); },
     async addUnitPhoto(pid, id, ph){ const u = db.unitPages[pid].units[id]; u.photos = [...(u.photos || []), ph]; persist(); },
     async removeUnitPhoto(pid, id, ph){ const u = db.unitPages[pid].units[id]; u.photos = (u.photos || []).filter(x => x !== ph); delete this._photos[ph]; persist(); },
@@ -959,6 +1193,10 @@ function makeFirebaseStore(){
       if(!pid) pid = db.collection('unitPages').doc().id;
       await db.collection('unitPages').doc(pid).set({units:{[id]:data}}, {merge:true});
     },
+    async setLayout(key, entry){ await db.collection('unitPages').doc(LAYOUT_DOC).set({layouts:{[key]:entry}}, {merge:true}); },
+    async setStaff(uid, entry){ await db.collection('unitPages').doc(STAFF_DOC).set({staff:{[uid]:entry}}, {merge:true}); },
+    async setAlias(from, to){ await db.collection('unitPages').doc(LAYOUT_DOC).set({aliases:{[from]:to || null}}, {merge:true}); },
+    async deleteLayoutPhoto(ph){ await db.collection('unitPhotos').doc(ph).delete().catch(() => {}); },
     async saveUnit(pid, id, data){
       const upd = {}; Object.entries(data).forEach(([k, v]) => upd[`units.${id}.${k}`] = v === undefined ? null : v);
       await db.collection('unitPages').doc(pid).update(upd);
@@ -1015,7 +1253,7 @@ function makeFirebaseStore(){
       const email = `${u.login}.r${Date.now().toString(36)}@${LOGIN_DOMAIN}`;
       const c = await sec.auth().createUserWithEmailAndPassword(email, password);
       const nu = c.user.uid;
-      await db.collection('users').doc(nu).set({name:u.name, login:u.login, role:u.role, leaderId:u.leaderId || null, active:true, createdAt:u.createdAt || Date.now(), prevUids:[...(u.prevUids || []), u.uid]});
+      await db.collection('users').doc(nu).set({name:u.name, login:u.login, role:u.role, leaderId:u.leaderId || null, phone:u.phone || '', active:true, createdAt:u.createdAt || Date.now(), prevUids:[...(u.prevUids || []), u.uid]});
       await db.collection('logins').doc(u.login).set({email});
       const snap = await db.collection('leads').where('assignedTo', '==', u.uid).get();
       const ids = snap.docs.map(d => d.id);
@@ -1042,7 +1280,7 @@ const S = {
   f:{q:'', status:'all', sales:'all', special:'', src:'all'}, limit:60,
   upload:null, dist:null, openId:null, newCred:null, actFilter:'all', regMode:false,
   units:[], unitPages:{}, uf:{q:'', purpose:'all', furn:'all', st:'all', mine:false, beds:''}, ulimit:60,
-  photoCache:{}, ownerCache:{}, inv:null, openUnitId:null
+  photoCache:{}, ownerCache:{}, inv:null, openUnitId:null, layouts:{}, aliases:{}, staff:{}
 };
 const isAdmin = () => !!S.me && ['admin','manager','leader'].includes(S.me.role);   // شاشات الإدارة (أدمن / مدير / تيم ليدر)
 const isBoss = () => !!S.me && BOSS_ROLES.includes(S.me.role);                     // يشوف كل حاجة
@@ -1092,7 +1330,7 @@ function onAuth(me){
       const fresh = list.filter(l => !known.has(l.id)).length;
       if(fresh) toast(`وصلك ${fresh} عميل جديد`);
     }
-    S.leads = list; S.leadsLoaded = true; render();
+    S.leads = list; S.leadsLoaded = true; vwResume(); render();
   }));
   S.unsub.push(store.onActivities(a => { S.acts = a; if(S.tab === 'activity') render(); }));
   S.photoCache = {}; S.ownerCache = {}; S.inv = null; S.units = []; S.unitPages = {};
@@ -1106,7 +1344,8 @@ function render(){
   if(!S.me){ app.innerHTML = store.mode === 'demo' ? demoLoginView() : loginView(); return; }
   const keepScroll = window.scrollY;
   const q = document.activeElement && document.activeElement.id === 'q';
-  app.innerHTML = headerView() + `<main>${mainView()}</main>` + navView();
+  app.innerHTML = headerView() + viewingBanner() + `<main>${mainView()}</main>` + navView();
+  if(isBoss() && S.tab === 'team') setTimeout(() => App.syncStaff(), 300);
   if(q){ const el = $('#q'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   window.scrollTo(0, keepScroll);
 }
@@ -1192,7 +1431,85 @@ function callsByToday(){
   S.leads.forEach(l => (l.history || []).forEach(h => { if(h.at >= t0 && h.status !== 'assign') out[h.by] = (out[h.by] || 0) + 1; }));
   return out;
 }
-function adminHome(){
+/* ---------------- المعاينات ---------------- */
+const VW_EVERY = 60000;          // تحديث المكان كل دقيقة
+const VW_MAX_AGE = 6 * 3600000;  // المعاينة اللي بقالها 6 ساعات من غير تحديث بتختفي من القايمة
+const myViewing = () => S.leads.find(l => l.viewing && l.viewing.active && l.viewing.by === S.me.uid);
+function minsAgo(t){ const m = Math.max(0, Math.round((Date.now() - t) / 60000)); return m < 1 ? 'دلوقتي' : m < 60 ? `من ${m} دقيقة` : `من ${Math.floor(m / 60)} ساعة و${m % 60} دقيقة`; }
+function viewingBanner(){
+  const l = myViewing(); if(!l) return '';
+  const v = l.viewing;
+  return `<div class="card" style="margin:10px 12px 0;border:2px solid #16A34A;background:#F0FDF4">
+    <div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">🚶</span>
+      <div style="flex:1;min-width:0"><b>انت في معاينة مع ${esc(l.name || 'عميل')}</b>
+      <div class="muted" style="font-size:12.5px">${v.unit ? esc(v.unit) + ' · ' : ''}بدأت ${minsAgo(v.start)} · ${v.at ? 'آخر مكان اتبعت ' + minsAgo(v.at) : 'لسه مفيش مكان'}</div>
+      <div class="muted" style="font-size:12px;color:#B45309">خلّي الأبليكيشن مفتوح عشان مكانك يفضل يتحدث</div></div></div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button>
+      <button class="btn danger" id="vwEndBtn" onclick="App.vwEnd('${l.id}')">خلصت المعاينة</button></div></div>`;
+}
+function activeViewingsCard(){
+  const list = S.leads.filter(l => l.viewing && l.viewing.active && (Date.now() - (l.viewing.at || l.viewing.start)) < VW_MAX_AGE)
+    .sort((a, b) => b.viewing.start - a.viewing.start);
+  if(!list.length) return '';
+  return `<h3 style="margin-top:4px">🚶 معاينات شغالة دلوقتي (${list.length})</h3><div class="card" style="padding:2px 14px;margin-bottom:12px">${list.map(l => {
+    const v = l.viewing, old = v.at ? Date.now() - v.at > 5 * 60000 : true;
+    return `<div class="staff"><div class="staff-top">${avatarHtml(v.by, 36)}
+      <div style="flex:1;min-width:0"><b>${esc(v.byName || userName(v.by))}</b> مع <a href="javascript:void 0" onclick="App.open('${l.id}')" style="color:var(--navy);font-weight:700">${esc(l.name || 'عميل')}</a>
+        <div class="muted" style="font-size:12px">${v.unit ? esc(v.unit) + ' · ' : ''}بدأت ${minsAgo(v.start)}</div>
+        <div style="font-size:12px;color:${old ? '#B91C1C' : '#15803D'}">${v.at ? 'آخر مكان ' + minsAgo(v.at) + (old ? ' — الأبليكيشن غالبًا مقفول عنده' : '') : 'لسه مبعتش مكانه'}</div></div>
+      ${v.lat ? `<a class="btn ghost mini" href="${mapsUrl(v)}" target="_blank" rel="noopener">الخريطة</a>` : ''}</div></div>`; }).join('')}</div>`;
+}
+function viewingLeadBlock(l){
+  const v = l.viewing;
+  if(v && v.active){
+    if(v.by === S.me.uid) return `<div class="card" style="margin-top:10px;border:2px solid #16A34A;background:#F0FDF4"><b>🚶 انت في معاينة مع العميل ده</b>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button><button class="btn danger" id="vwEndBtn" onclick="App.vwEnd('${l.id}')">خلصت المعاينة</button></div></div>`;
+    return `<div class="card" style="margin-top:10px;background:#F0FDF4"><b>🚶 ${esc(v.byName || '')} في معاينة مع العميل ده</b><div class="muted" style="font-size:12.5px">${v.at ? 'آخر مكان ' + minsAgo(v.at) : ''}</div>
+      ${v.lat ? `<a class="btn ghost mini" style="margin-top:6px" href="${mapsUrl(v)}" target="_blank" rel="noopener">افتح على الخريطة</a>` : ''}</div>`;
+  }
+  if(l.assignedTo !== S.me.uid) return '';
+  return `<button class="btn block" style="margin-top:10px;background:#16A34A" onclick="App.vwSheet('${l.id}')">🚶 طالع معاينة مع العميل ده</button>`;
+}
+function vwManager(){
+  const me = staffInfo(S.me.uid);
+  const pick = [];
+  if(me.leaderId) pick.push(staffInfo(me.leaderId));
+  Object.keys(S.staff).map(staffInfo).filter(x => x.role === 'manager').forEach(x => pick.push(x));
+  Object.keys(S.staff).map(staffInfo).filter(x => x.role === 'admin').forEach(x => pick.push(x));
+  return pick.find(x => x.phone && x.uid !== S.me.uid) || null;
+}
+let VW = null;   // {leadId, watch, timer, pos, sent}
+function vwStop(){ if(!VW) return; try{ navigator.geolocation.clearWatch(VW.watch); }catch(e){} clearInterval(VW.timer); VW = null; }
+async function vwSend(force){
+  if(!VW) return;
+  const l = leadById(VW.leadId); if(!l || !l.viewing || !l.viewing.active){ vwStop(); return; }
+  const now = Date.now();
+  if(!force && now - VW.sent < VW_EVERY - 3000) return;
+  VW.sent = now;
+  const v = {...l.viewing, at:now, ...(VW.pos || {})};
+  try{ await store.updateLeads([l.id], {viewing:v}); }catch(e){}
+}
+function vwTrack(leadId){
+  if(VW && VW.leadId === leadId) return;
+  vwStop();
+  VW = {leadId, pos:null, sent:0, watch:null, timer:null};
+  if(navigator.geolocation) VW.watch = navigator.geolocation.watchPosition(p => {
+    const np = {lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6), acc:Math.round(p.coords.accuracy || 0)};
+    const moved = VW.pos ? Math.hypot((np.lat - VW.pos.lat) * 111000, (np.lng - VW.pos.lng) * 96000) : 9999;
+    VW.pos = np;
+    if(moved > 80 && Date.now() - VW.sent > 20000) vwSend(true); else vwSend(false);
+  }, () => {}, {enableHighAccuracy:true, maximumAge:15000, timeout:30000});
+  VW.timer = setInterval(() => vwSend(false), 15000);
+}
+function vwResume(){
+  if(!S.me) return;
+  const l = myViewing();
+  if(l) vwTrack(l.id); else vwStop();
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && VW) vwSend(true); });
+
+function adminHome(){ return activeViewingsCard() + adminHomeBase(); }
+function adminHomeBase(){
   const L = S.leads, t0 = startOfDay();
   const notCalled = L.filter(l => l.assignedTo && l.status === 'new').length;
   const today = L.filter(l => l.lastContactAt >= t0).length;
@@ -1373,12 +1690,14 @@ function leadSheet(l){
     <span class="phone">${esc(l.phone || '—')}</span> <span class="pill" style="--c:${st.color}">${st.label}</span></div>
     <button class="x" onclick="App.close()">×</button></div>
   ${contactBtns(l.phone)}
+  ${viewingLeadBlock(l)}
   <div class="card details" style="margin-top:12px">
     <div><span>المشروع</span>${esc(l.project || '—')}</div>
     <div><span>رقم الوحدة</span>${esc(l.unit || '—')}</div>
     ${isAdmin() ? `<div><span>مع مين</span>${esc(userName(l.assignedTo))}</div>` : ''}
     <div><span>آخر تواصل</span>${ago(l.lastContactAt)}</div>
     ${l.source ? `<div><span>المصدر</span>${esc(SOURCES[l.source] || l.source)}</div>` : ''}
+    ${l.source === 'broker' && (l.brokerName || l.brokerPhone) ? `<div><span>البروكر</span>${esc(l.brokerName || '')}${l.brokerPhone ? ` · <a href="tel:${esc(l.brokerPhone)}" dir="ltr" style="color:var(--navy)">${esc(l.brokerPhone)}</a>` : ''}</div>` : ''}
     ${l.nextFollowUp && OPEN.has(l.status) ? `<div><span>المتابعة الجاية</span><b class="due ${dueLabel(l.nextFollowUp).cls}">${fmt(l.nextFollowUp)}</b></div>` : ''}
     <div><span>عدد المكالمات</span>${l.callCount || 0}</div>
     ${extra.map(([k, v]) => `<div><span>${esc(k)}</span>${esc(v)}</div>`).join('')}
@@ -1388,8 +1707,9 @@ function leadSheet(l){
   <div class="card">
     <div class="row">
       <div><label class="f" style="margin-top:0">نوع العميل</label><select class="sel" id="lCt" style="margin:0" onchange="App.ctChange()"><option value="">—</option>${opts(CLIENT_TYPES, l.clientType)}</select></div>
-      <div><label class="f" style="margin-top:0">مصدر العميل</label><select class="sel" id="lSrc" style="margin:0"><option value="">—</option>${opts(SOURCES, l.source)}</select></div>
+      <div><label class="f" style="margin-top:0">مصدر العميل</label><select class="sel" id="lSrc" style="margin:0" onchange="$('#lBrW').classList.toggle('hidden', this.value !== 'broker')"><option value="">—</option>${opts(SOURCES, l.source)}</select></div>
     </div>
+    ${brokerFields('l', l)}
     <div id="lFurnWrap" class="${['owner_rent', 'tenant'].includes(l.clientType) ? '' : 'hidden'}"><label class="f">الإيجار مفروش ولا فاضي؟</label>
       <select class="sel" id="lFurn" style="margin:0"><option value="">—</option>${opts(FURNISH, l.furnished)}</select></div>
     <button class="btn ghost block" style="margin-top:12px" onclick="App.saveInfo()">حفظ بيانات العميل</button>
@@ -1431,11 +1751,12 @@ function leadSheet(l){
 
   ${isAdmin() ? `<h3>تحويل العميل</h3>
   <div class="card row" style="align-items:center">
-    <select class="sel" id="reas" style="margin:0">
-      <option value="">مش متوزع</option>
-      ${activeSales().map(u => `<option value="${u.uid}" ${l.assignedTo === u.uid ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
+    <select class="sel" id="reas" style="margin:0" onchange="const b=$('#reasBtn');delete b.dataset.sure;b.textContent='حوّل'">
+      <option value="__" selected disabled>اختار هتحوّله لمين...</option>
+      ${activeSales().filter(u => u.uid !== l.assignedTo).map(u => `<option value="${u.uid}">${esc(u.name)}</option>`).join('')}
+      ${l.assignedTo ? '<option value="">شيله من عند السيلز (مش متوزع)</option>' : ''}
     </select>
-    <button class="btn" style="flex:none" onclick="App.reassign()">حوّل</button>
+    <button class="btn" style="flex:none" id="reasBtn" onclick="App.reassign()">حوّل</button>
   </div>` : ''}
 
   <h3>اللي حصل مع العميل (${hist.length})</h3>
@@ -1589,6 +1910,10 @@ function teamView(){
         اسم الدخول: <code>${esc(S.newCred.login)}</code><br>كلمة السر: <code>${esc(S.newCred.pw)}</code>
         <div style="margin-top:8px"><button type="button" class="btn ghost" onclick="App.copyCred()">انسخ البيانات</button></div></div>` : ''}
     </form>
+    ${boss ? (() => { const meU = S.users[S.me.uid] || S.me; return `<div class="card" style="margin-top:12px;display:flex;align-items:center;gap:10px">
+      ${avatarHtml(S.me.uid, 42)}
+      <div style="flex:1;min-width:0"><b>رقمك وصورتك</b><div class="muted" style="font-size:12.5px">${meU.phone ? `<span dir="ltr">${esc(meU.phone)}</span>` : 'الرقم مش متسجل'} · بيظهروا في الإعلانات اللي بتعملها</div></div>
+      <button class="btn ghost mini" onclick="App.phoneSheet('${S.me.uid}')">${meU.phone ? 'تعديل' : '＋ ضيف'}</button></div>`; })() : ''}
     <h3>${boss ? 'الموظفين' : 'فريقك'}</h3>
     <div class="card" style="padding:2px 14px">
     ${staff.length ? staff.map(u => {
@@ -1597,14 +1922,16 @@ function teamView(){
       const team = u.role === 'leader' ? Object.values(S.users).filter(x => x.leaderId === u.uid && x.active && !x.replacedBy).length : 0;
       return `<div class="staff">
         <div class="staff-top">
+          ${avatarHtml(u.uid, 38)}
           <div style="flex:1;min-width:0"><b>${esc(u.name)}</b> <span class="role-tag r-${u.role}">${ROLE_LABEL[u.role]}</span>${u.active ? '' : ' <span class="role-tag" style="background:#FEE2E2;color:#B91C1C">متوقف</span>'}
-            <div class="muted" style="font-size:12px"><span dir="ltr">${esc(u.login)}</span> · ${mine.length} عميل · ${mine.filter(l => l.status === 'closed').length} بيع${u.role === 'leader' ? ` · فريقه ${team}` : ''}${u.role === 'sales' && u.leaderId && S.users[u.leaderId] ? ` · فريق ${esc(S.users[u.leaderId].name)}` : ''}</div></div>
+            <div class="muted" style="font-size:12px"><span dir="ltr">${esc(u.login)}</span>${u.phone ? ` · <span dir="ltr">${esc(u.phone)}</span>` : (boss ? ' · <span style="color:#B45309">من غير رقم موبايل</span>' : '')} · ${mine.length} عميل · ${mine.filter(l => l.status === 'closed').length} بيع${u.role === 'leader' ? ` · فريقه ${team}` : ''}${u.role === 'sales' && u.leaderId && S.users[u.leaderId] ? ` · فريق ${esc(S.users[u.leaderId].name)}` : ''}</div></div>
           ${editable ? `<label class="switch" title="${u.active ? 'شغال' : 'متوقف'}"><input type="checkbox" ${u.active ? 'checked' : ''} onchange="App.toggleUser('${u.uid}', this.checked)"><span></span></label>` : ''}
         </div>
         ${editable ? `<div class="staff-ctl">
           <select class="sel mini" onchange="App.setRole('${u.uid}', this.value)">${roleOpts(u.role)}</select>
           ${u.role === 'sales' ? `<select class="sel mini" onchange="App.setLeader('${u.uid}', this.value)">${leaderOpts(u.leaderId || '', u.uid)}</select>` : ''}
           <button class="btn ghost mini" onclick="App.pwSheet('${u.uid}')">كلمة سر جديدة</button>
+          <button class="btn ghost mini" onclick="App.phoneSheet('${u.uid}')">${u.phone && staffInfo(u.uid).photo ? 'الموبايل والصورة' : '＋ الموبايل والصورة'}</button>
         </div>` : ''}
       </div>`; }).join('') : `<div class="empty">لسه مفيش حد</div>`}
     </div>
@@ -1622,6 +1949,7 @@ function activityView(){
       return `<div class="act"><div class="ic" style="color:${s.color}">${ICON.phone.replace('<svg', '<svg width="18" height="18"')}</div><div class="tx">
         <b>${esc(a.byName)}</b> كلّم <a href="javascript:void 0" onclick="App.open('${a.leadId}')" style="color:var(--navy);font-weight:700">${esc(a.leadName || 'عميل')}</a> — <span style="color:${s.color};font-weight:700">${s.label}</span>
         ${a.note ? `<div class="note">${esc(a.note)}</div>` : ''}${voiceBtn(a.voice)}<div class="t">${fmt(a.at)} · ${ago(a.at)}</div></div></div>`; }
+    if(a.type === 'viewing') return `<div class="act"><div class="ic">🚶</div><div class="tx">${esc(a.note)}${a.lat ? ` · <a href="${mapsUrl(a)}" target="_blank" rel="noopener" style="color:var(--navy)">المكان</a>` : ''}<div class="t">${fmt(a.at)} · ${ago(a.at)}</div></div></div>`;
     if(a.type === 'assign') return `<div class="act"><div class="ic">⇄</div><div class="tx">${esc(a.note)}<div class="t">${fmt(a.at)}</div></div></div>`;
     return `<div class="act"><div class="ic">${ICON.upload.replace('<svg', '<svg width="18" height="18"')}</div><div class="tx">${esc(a.byName)}: ${esc(a.note)}<div class="t">${fmt(a.at)}</div></div></div>`;
   };
@@ -1752,8 +2080,11 @@ const App = window.App = {
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'حفظ'; }
   },
   async reassign(){
-    const l = leadById(S.openId); const to = $('#reas').value || null;
+    const l = leadById(S.openId), sel = $('#reas'), b = $('#reasBtn');
+    if(!sel.value || sel.value === '__'){ if(sel.value !== '') return toast('اختار من القايمة هتحوّل العميل لمين الأول'); }
+    const to = sel.value || null;
     if((l.assignedTo || null) === to) return toast('العميل أصلاً مع نفس الشخص');
+    if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = to ? `متأكد؟ حوّل لـ ${userName(to)}` : 'متأكد؟ شيله من السيلز'; return; }
     const now = Date.now(), note = `${S.me.name} حوّل ${l.name || 'عميل'} ${l.assignedTo ? 'من ' + userName(l.assignedTo) + ' ' : ''}لـ ${userName(to)}`;
     try{
       await store.updateLeads([l.id], {assignedTo:to, assignedAt:to ? now : null, teamId:teamOf(to)}, {at:now, by:S.me.uid, byName:S.me.name, status:'assign', note});
@@ -1905,7 +2236,7 @@ Object.assign(App, {
   ctChange(){ const v = $('#lCt').value; const w = $('#lFurnWrap'); if(w) w.classList.toggle('hidden', !['owner_rent', 'tenant'].includes(v)); },
   async saveInfo(){
     const l = leadById(S.openId); if(!l) return;
-    const patch = {clientType:$('#lCt').value || null, source:$('#lSrc').value || null, furnished:$('#lFurn') ? ($('#lFurn').value || null) : null};
+    const patch = {clientType:$('#lCt').value || null, source:$('#lSrc').value || null, ...brokerVal('l', $('#lSrc').value), furnished:$('#lFurn') ? ($('#lFurn').value || null) : null};
     try{ await store.updateLeads([l.id], patch, null); toast('اتحفظت بيانات العميل ✓'); const nl = leadById(l.id); if(nl) openSheet(leadSheet({...nl, ...patch})); }
     catch(e){ toast(fbError(e)); }
   },
@@ -1935,7 +2266,7 @@ Object.assign(App, {
     const now = Date.now(), note = $('#nlNote').value.trim();
     const ct = $('#nlCt').value || null;
     const lead = {name:$('#nlName').value.trim(), phone, project:$('#nlProj').value.trim(), unit:$('#nlUnit').value.trim(), extra:note ? {'ملاحظات':note} : {},
-      clientType:ct, source:$('#nlSrc').value || null, furnished:['owner_rent', 'tenant'].includes(ct) ? ($('#nlFurn').value || null) : null,
+      clientType:ct, source:$('#nlSrc').value || null, ...brokerVal('nl', $('#nlSrc').value), furnished:['owner_rent', 'tenant'].includes(ct) ? ($('#nlFurn').value || null) : null,
       status:'new', assignedTo:to, teamId:teamOf(to), assignedAt:to ? now : null, createdAt:now, createdBy:S.me.uid,
       lastContactAt:null, nextFollowUp:null, callCount:0, history:[]};
     const b = $('#nlBtn'); b.disabled = true; b.textContent = 'بيضيف...';
@@ -1953,7 +2284,7 @@ Object.assign(App, {
   umore(){ S.ulimit += 100; render(); },
   openUnit(id){
     const u = unitById(id); if(!u) return toast('الوحدة دي مش موجودة');
-    recCleanup(); S.openUnitId = id; openSheet(unitSheet(u)); fillPhotos(u); fillOwner(u);
+    recCleanup(); S.openUnitId = id; S._lastUnit = id; openSheet(unitSheet(u)); fillPhotos(u); fillOwner(u);
   },
   async unitForm(id, pre){
     const u = id ? unitById(id) : null;
@@ -1978,6 +2309,7 @@ Object.assign(App, {
       purpose:g('#uPurp'), type:g('#uType'), bedrooms:g('#uBeds'), bathrooms:g('#uBaths'), floor:g('#uFloor'), bua:g('#uBua'), land:g('#uLand'),
       finishing:g('#uFin'), furnished:g('#uFurn'), price:g('#uPrice'), downPayment:g('#uDp'), delivery:g('#uDel'), status:st,
       availableFrom:st === 'rented' && g('#uAv') ? new Date(g('#uAv') + 'T12:00').getTime() : null, notes:g('#uNotes'),
+      loc:(() => { try{ return g('#uLoc') ? JSON.parse(g('#uLoc')) : (old && old.loc) || null; }catch(e){ return (old && old.loc) || null; } })(),
       agentId, agentName:agentUser ? agentUser.name : (agentId === S.me.uid ? S.me.name : (old && old.agentId === agentId ? old.agentName : '')),
       teamId:agentId ? teamOf(agentId) : (isLeader() ? S.me.uid : null)};
     const owner = {ownerName:g('#uOName'), ownerPhone:normalizePhone(g('#uOPhone')), otherPhone:g('#uOther'), agentId:data.agentId, teamId:data.teamId};
@@ -2054,6 +2386,247 @@ Object.assign(App, {
       if(navigator.share){ await navigator.share({text}); toast('الموبايل ده مش بيبعت صور من هنا — افتح كل صورة واحفظها'); return; }
       App.copyText(text); toast('اتنسخت التفاصيل — افتح كل صورة واحفظها');
     }catch(e){ if(e && e.name !== 'AbortError') toast('مقدرتش أشارك: ' + (e.message || e)); }
+  },
+  /* الإعلان */
+  adSheet(id){
+    const u = unitById(id); if(!u) return;
+    const c = adContact(u);
+    const warn = !c.phone ? `<div class="err" style="margin-top:8px">رقم موبايلك مش متسجل — ${isBoss() ? 'ضيفه من صفحة الفريق' : 'اطلب من المدير يضيفه'}، أو اكتبه في الإعلان بإيدك.</div>`
+      : `<div class="muted" style="font-size:12.5px;margin-top:6px">الإعلان باسمك ورقمك${c.photo ? ' وصورتك' : ''}: ${esc(c.name)} – <span dir="ltr">${esc(c.phone)}</span></div>`;
+    openSheet(`<div class="sheet-h"><h2>📣 إعلان الوحدة</h2><button class="x" onclick="App.close()">×</button></div>
+      <div class="muted" style="font-size:12.5px">تقدر تعدّل الكلام قبل ما تنسخه. رقم المالك مش بيظهر في الإعلان.</div>${warn}
+      <label class="f">بالعربي</label><textarea class="in" id="adAr" dir="rtl" style="min-height:170px;line-height:1.7">${esc(unitAdText(u, 'ar'))}</textarea>
+      <label class="f">English</label><textarea class="in" id="adEn" dir="ltr" style="min-height:170px;line-height:1.7">${esc(unitAdText(u, 'en'))}</textarea>
+      <div class="row" style="margin-top:12px">
+        <button class="btn ghost" onclick="App.copyAd('ar')">انسخ العربي</button>
+        <button class="btn ghost" onclick="App.copyAd('en')">Copy English</button>
+      </div>
+      <button class="btn block" style="margin-top:8px" onclick="App.copyAd('both')">انسخ الاتنين مع بعض</button>
+      <h3 style="margin-top:16px">كارت الإعلان (صورة)</h3>
+      <div class="muted" style="font-size:12.5px">صورة جاهزة فيها الوحدة واسم السيلز وصورته ورقمه — بتتنشر مع الإعلان.</div>
+      <div id="adCard" class="card" style="margin-top:8px;text-align:center;padding:8px"><span class="muted">بيجهّز الكارت...</span></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost" onclick="App.saveAdCard()">حفظ الكارت</button>
+        <button class="btn" onclick="App.shareAd('${u.id}')">شارك الإعلان${(u.photos || []).length ? ' + الصور' : ''}</button>
+      </div>`);
+    S._adCard = null;
+    makeAdCard(u).then(src => { S._adCard = src; const el = $('#adCard'); if(el) el.innerHTML = `<img src="${src}" alt="" style="width:100%;border-radius:10px;display:block">`; })
+      .catch(() => { const el = $('#adCard'); if(el) el.innerHTML = '<span class="muted">مقدرتش أعمل الكارت</span>'; });
+  },
+  saveAdCard(){
+    if(!S._adCard) return toast('الكارت لسه بيتجهز، استنى ثانية');
+    const a = document.createElement('a'); a.href = S._adCard; a.download = 'blue-ad.jpg'; document.body.appendChild(a); a.click(); a.remove();
+  },
+  adValue(kind){
+    const ar = ($('#adAr') || {}).value || '', en = ($('#adEn') || {}).value || '';
+    return kind === 'ar' ? ar : kind === 'en' ? en : `${ar}\n\n————————\n\n${en}`;
+  },
+  copyAd(kind){ App.copyText(App.adValue(kind)); },
+  async shareAd(id){
+    const u = unitById(id); if(!u) return;
+    const text = App.adValue('both');
+    try{
+      toast('بيجهّز الصور...');
+      const files = [];
+      const card = S._adCard || await makeAdCard(u).catch(() => '');
+      if(card) files.push(new File([b64ToBlob(card.split(',')[1], 'image/jpeg')], `blue-ad-${(u.code || 'unit').replace(/[^\w-]/g, '')}.jpg`, {type:'image/jpeg'}));
+      for(const [i, pid] of (u.photos || []).entries()){
+        const src = await loadPhotoURL(pid); if(!src) continue;
+        files.push(new File([b64ToBlob(src.split(',')[1], 'image/jpeg')], `blue-${(u.code || 'unit').replace(/[^\w-]/g, '')}-${i + 1}.jpg`, {type:'image/jpeg'}));
+      }
+      App.copyText(text);
+      if(navigator.canShare && navigator.canShare({files})){ await navigator.share({files, text}); toast('الإعلان اتنسخ كمان — الصقه لو الكلام مظهرش'); return; }
+      toast('اتنسخ الإعلان — الموبايل ده مش بيشارك صور من هنا، احفظ الصور من الوحدة');
+    }catch(e){ if(e && e.name !== 'AbortError') toast('مقدرتش أشارك: ' + (e.message || e)); }
+  },
+  /* اللوكيشن */
+  async grabLoc(id){
+    const u = unitById(id); if(!u || !canEditUnit(u)) return;
+    const b = $('#locBtn'); if(b){ b.disabled = true; b.textContent = 'بيحدد مكانك...'; }
+    try{
+      const p = await getPosition();
+      if(p.acc > 150 && b && !b.dataset.sure){ b.dataset.sure = 1; b.disabled = false; b.textContent = `الدقة ضعيفة (${p.acc}م) — دوس تاني للحفظ`; S._pendingLoc = p; return; }
+      const loc = {...(S._pendingLoc && b && b.dataset.sure ? S._pendingLoc : p), at:Date.now(), by:S.me.uid, byName:S.me.name};
+      S._pendingLoc = null;
+      await store.saveUnit(u.page, id, {loc});
+      toast('اتسجل اللوكيشن ✓'); setTimeout(() => App.openUnit(id), 150);
+    }catch(e){ toast(e.message || fbError(e)); if(b){ b.disabled = false; b.textContent = 'خد اللوكيشن من مكاني'; } }
+  },
+  async formLoc(){
+    const b = $('#uLocBtn'); b.disabled = true; b.textContent = 'بيحدد مكانك...';
+    try{
+      const p = await getPosition();
+      const loc = {...p, at:Date.now(), by:S.me.uid, byName:S.me.name};
+      $('#uLoc').value = JSON.stringify(loc);
+      $('#uLocTxt').innerHTML = `اتاخد ✓ (دقة ${p.acc} متر) <a href="${mapsUrl(loc)}" target="_blank" rel="noopener">شوفه</a> — اضغط حفظ`;
+      b.textContent = 'حدّث من مكاني';
+    }catch(e){ toast(e.message || 'مقدرتش أحدد المكان'); b.textContent = 'خد اللوكيشن من مكاني'; }
+    b.disabled = false;
+  },
+  /* اللي أوت */
+  async addLayout(id, files){
+    const u = unitById(id); if(!u || !canLayout() || !files || !files.length) return;
+    const key = projKey(u.project); if(!key) return;
+    const cur = S.layouts[key] || {name:u.project, photos:[]};
+    const room = MAX_LAYOUTS - (cur.photos || []).length;
+    const list = Array.from(files).slice(0, Math.max(0, room));
+    if(files.length > room) toast(`أقصى عدد ${MAX_LAYOUTS} صور لي أوت للمشروع`);
+    const st = () => $('#lyStatus'); const photos = [...(cur.photos || [])];
+    for(const [i, f] of list.entries()){
+      if(st()) st().textContent = `بيرفع اللي أوت... ${i + 1} من ${list.length}`;
+      try{
+        const b64 = await processLayout(f);
+        const pid = await store.savePhoto(b64, {layout:key, by:S.me.uid, at:Date.now()});
+        S.photoCache[pid] = 'data:image/jpeg;base64,' + b64; photos.push(pid);
+      }catch(e){ toast('صورة مترفعتش: ' + fbError(e)); }
+    }
+    try{ await store.setLayout(key, {name:cur.name || u.project, photos, by:S.me.uid, at:Date.now()}); toast('اترفع اللي أوت ✓ — هيظهر في كل وحدات المشروع'); }
+    catch(e){ toast(fbError(e)); }
+    if(st()) st().textContent = '';
+    setTimeout(() => { if(S.openUnitId === id) App.openUnit(id); }, 200);
+  },
+  async viewLayout(key, i){
+    const L = S.layouts[key]; if(!L || !L.photos || !L.photos.length) return;
+    i = (i + L.photos.length) % L.photos.length;
+    const pid = L.photos[i];
+    const lb = $('#lb'); lb.innerHTML = '<span class="muted">بيحمّل...</span>'; lb.classList.remove('hidden');
+    const src = S.photoCache[pid] || await loadPhotoURL(pid).catch(() => '');
+    if(!src){ lb.innerHTML = '<span class="muted">الصورة مش موجودة</span>'; return; }
+    const n = L.photos.length;
+    lb.innerHTML = `<img src="${src}" alt=""><div class="lb-bar">
+      ${n > 1 ? `<button class="btn ghost mini" onclick="event.stopPropagation();App.viewLayout('${key}', ${i - 1})">السابقة</button><span class="muted" style="color:#fff;align-self:center">${i + 1} / ${n}</span><button class="btn ghost mini" onclick="event.stopPropagation();App.viewLayout('${key}', ${i + 1})">التالية</button>` : ''}
+      <a class="btn ghost mini" href="${src}" download="layout-${esc(key)}-${i + 1}.jpg" onclick="event.stopPropagation()">حفظ الصورة</a>
+      ${canLayout() ? `<button class="btn danger mini" onclick="event.stopPropagation();App.delLayout('${key}', '${esc(pid)}')">امسح</button>` : ''}
+      <button class="btn mini" onclick="App.closeLb()">قفل</button></div>`;
+  },
+  async delLayout(key, pid){
+    const L = S.layouts[key]; if(!L || !canLayout()) return;
+    try{
+      await store.setLayout(key, {...L, photos:(L.photos || []).filter(x => x !== pid), at:Date.now()});
+      if(store.deleteLayoutPhoto) await store.deleteLayoutPhoto(pid);
+      App.closeLb(); toast('اتمسحت'); if(S.openUnitId) setTimeout(() => App.openUnit(S.openUnitId), 150);
+    }catch(e){ toast(fbError(e)); }
+  },
+  vwSheet(id){
+    const l = leadById(id); if(!l) return;
+    const guess = [l.project, l.unit].filter(Boolean).join(' – ');
+    openSheet(`<div class="sheet-h"><h2>🚶 معاينة مع ${esc(l.name || 'العميل')}</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted">أول ما تبدأ، مكانك هيتبعت لمديرك كل دقيقة طول ما الأبليكيشن مفتوح، ولما تخلص دوس "خلصت المعاينة".</p>
+      <div class="card"><label class="f">الوحدة / المشروع (اختياري)</label>
+        <input class="in" id="vwUnit" list="vwUnits" value="${esc(guess)}" placeholder="مثلاً: Allegria – فيلا B12">
+        <datalist id="vwUnits">${[...new Set(S.units.map(u => [u.project, u.unitNo].filter(Boolean).join(' – ')).filter(Boolean))].slice(0, 400).map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+        <button class="btn block" style="margin-top:12px;background:#16A34A" id="vwGo" onclick="App.vwStart('${id}')">ابدأ المعاينة</button></div>`);
+  },
+  async vwStart(id){
+    const l = leadById(id); if(!l) return;
+    if(myViewing()) return toast('انت أصلاً في معاينة — خلّصها الأول');
+    const b = $('#vwGo'); b.disabled = true; b.textContent = 'بيحدد مكانك...';
+    let pos = null;
+    try{ pos = await getPosition(); }catch(e){ toast(e.message + ' — المعاينة هتبدأ من غير مكان'); }
+    const now = Date.now(), unit = ($('#vwUnit') || {}).value ? $('#vwUnit').value.trim() : '';
+    const v = {active:true, start:now, at:pos ? now : null, unit, by:S.me.uid, byName:S.me.name, ...(pos || {})};
+    try{
+      await store.updateLeads([id], {viewing:v});
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`${S.me.name} طلع معاينة مع ${l.name || 'عميل'}${unit ? ' — ' + unit : ''}`, teamId:l.teamId || myTeam(), ...(pos ? {lat:pos.lat, lng:pos.lng} : {})});
+      l.viewing = v; vwTrack(id);
+      closeSheet(); toast('بدأت المعاينة ✓'); render();
+      setTimeout(() => App.vwWhats(id), 250);
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'ابدأ المعاينة'; }
+  },
+  vwWhats(id){
+    const l = leadById(id); if(!l) return;
+    const m = vwManager(), v = l.viewing || {};
+    const msg = `📍 أنا طالع معاينة دلوقتي\nالعميل: ${l.name || '—'}${v.unit ? '\nالوحدة: ' + v.unit : ''}${v.lat ? '\nمكاني: ' + mapsUrl(v) : ''}\nهبعتلك اللوكيشن اللايف دلوقتي.`;
+    openSheet(`<div class="sheet-h"><h2>ابعت لمديرك على واتساب</h2><button class="x" onclick="App.close()">×</button></div>
+      ${m ? `<p class="muted">هيفتحلك محادثة <b>${esc(m.name)}</b> وفيها رسالة جاهزة. ابعتها، وبعدين:</p>
+        <div class="card" style="line-height:2">1. دوس على 📎 (أو ＋ على الآيفون)<br>2. اختار <b>Location / الموقع</b><br>3. اختار <b>Share live location / مشاركة الموقع المباشر</b> وحدد المدة</div>
+        <a class="btn block" style="margin-top:12px;background:#25D366" href="https://wa.me/${waNum(m.phone)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">افتح واتساب ${esc(m.name)}</a>`
+      : `<div class="err">مفيش رقم موبايل متسجل لمديرك في صفحة الفريق — اطلب من الأدمن يضيفه. مكانك لسه بيتبعت جوه الأبليكيشن عادي.</div>`}
+      <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">بعدين</button>`);
+  },
+  async vwEnd(id){
+    const l = leadById(id), b = $('#vwEndBtn'); if(!l || !l.viewing) return;
+    if(b && !b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'متأكد؟ دوس تاني'; return; }
+    const now = Date.now(), v = {...l.viewing, active:false, end:now};
+    const mins = Math.max(1, Math.round((now - v.start) / 60000));
+    try{
+      await store.updateLeads([id], {viewing:v}); vwStop();
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`${S.me.name} خلّص معاينة مع ${l.name || 'عميل'} (${mins} دقيقة)${v.unit ? ' — ' + v.unit : ''}`, teamId:l.teamId || myTeam()});
+      closeSheet(); toast('اتسجلت المعاينة ✓ — متنساش تكتب حصل إيه مع العميل'); render();
+      setTimeout(() => App.open(id), 300);
+    }catch(e){ toast(fbError(e)); }
+  },
+  aliasSheet(id){
+    const u = unitById(id); if(!u || !canLayout()) return;
+    const from = projCanon(u.project), cur = projKey(u.project);
+    const seen = {};
+    S.units.forEach(x => { const k = projKey(x.project); if(!k || k === cur) return; (seen[k] = seen[k] || {name:x.project, n:0}).n++; });
+    Object.entries(S.layouts).forEach(([k, L]) => { if(k !== cur && L.photos && L.photos.length) (seen[k] = seen[k] || {name:L.name, n:0}).ly = true; });
+    const list = Object.entries(seen).sort((a, b) => (!!b[1].ly - !!a[1].ly) || b[1].n - a[1].n);
+    openSheet(`<div class="sheet-h"><h2>🔗 نفس المشروع</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted">لو <b>${esc(u.project)}</b> هو نفسه مشروع مكتوب باسم تاني (عربي أو إنجليزي أو بهجاء مختلف)، اختاره هنا، واللي أوت هيظهر للاتنين.</p>
+      ${from !== cur ? `<div class="card" style="display:flex;align-items:center;gap:8px"><div style="flex:1">مربوط دلوقتي بـ <b>${esc((S.layouts[cur] && S.layouts[cur].name) || (seen[cur] && seen[cur].name) || cur)}</b></div>
+        <button class="btn danger mini" onclick="App.setAlias('${from}', '')">فك الربط</button></div>` : ''}
+      <input class="in" placeholder="دوّر على المشروع..." oninput="const q=this.value.toLowerCase();document.querySelectorAll('.al-it').forEach(e=>e.classList.toggle('hidden',!e.dataset.n.includes(q)))">
+      <div class="card" style="padding:2px 12px;margin-top:8px;max-height:52vh;overflow:auto">
+      ${list.map(([k, v]) => `<button class="user-pick al-it" data-n="${esc(String(v.name || '').toLowerCase())}" onclick="App.setAlias('${from}', '${k}')"><b>${esc(v.name || k)}</b><small>${v.n ? v.n + ' وحدة' : ''}${v.ly ? ' · فيه لي أوت 🗺️' : ''}</small></button>`).join('') || '<div class="empty">مفيش مشاريع تانية</div>'}
+      </div>`);
+  },
+  async setAlias(from, to){
+    if(!canLayout()) return;
+    if(to && projKey(to) === from) return toast('ده هيعمل لفة — اختار مشروع تاني');
+    try{ await store.setAlias(from, to || null); S.aliases[from] = to || undefined; if(!to) delete S.aliases[from]; closeSheet(); toast(to ? 'اتربطوا ✓ — بقوا مشروع واحد' : 'اتفك الربط'); if(S._lastUnit) setTimeout(() => App.openUnit(S._lastUnit), 150); }
+    catch(e){ toast(fbError(e)); }
+  },
+  async pickAvatar(f){
+    const box = $('#avPrev');
+    if(!f){ S._avatar = ''; if(box) box.innerHTML = '<span class="muted" style="font-size:12px">هتتشال بعد الحفظ</span>'; return; }
+    try{ S._avatar = await processAvatar(f); if(box) box.innerHTML = `<img src="${S._avatar}" alt="" style="width:76px;height:76px;border-radius:50%;object-fit:cover">`; }
+    catch(e){ toast('مقدرتش أقرا الصورة دي'); }
+  },
+  // بيزامن أسماء وأرقام الفريق في ملف واحد يقدر يشوفه كل السيلز (للإعلانات وزرار المعاينة)
+  async syncStaff(){
+    if(!isBoss() || S._staffSync) return; S._staffSync = true;
+    try{
+      for(const u of Object.values(S.users)){
+        if(u.replacedBy) continue;
+        const m = S.staff[u.uid] || {};
+        if((m.name || '') !== (u.name || '') || (m.phone || '') !== (u.phone || '') || (m.role || '') !== (u.role || '') || (m.leaderId || null) !== (u.leaderId || null))
+          await store.setStaff(u.uid, {name:u.name || '', phone:u.phone || '', role:u.role || '', leaderId:u.leaderId || null});
+      }
+    }catch(e){}
+    setTimeout(() => { S._staffSync = false; }, 30000);
+  },
+  /* رقم الموبايل */
+  phoneSheet(uid){
+    const u = S.users[uid] || (uid === S.me.uid ? S.me : null); if(!u) return;
+    S._avatar = undefined;
+    const ph = staffInfo(uid).photo;
+    openSheet(`<div class="sheet-h"><h2>الموبايل والصورة</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted">لـ <b>${esc(u.name)}</b> — الرقم والصورة بيظهروا في إعلانات الوحدات بتاعته، والرقم بيستخدمه فريقه في زرار المعاينة.</p>
+      <div class="card" style="display:flex;align-items:center;gap:12px">
+        <div id="avPrev">${ph ? `<img src="${ph}" alt="" style="width:76px;height:76px;border-radius:50%;object-fit:cover">` : avatarHtml(uid, 76)}</div>
+        <div style="flex:1"><label class="btn ghost mini">${ph ? 'غيّر الصورة' : '＋ اختار صورة'}<input type="file" accept="image/*" class="hidden" onchange="App.pickAvatar(this.files[0])"></label>
+          ${ph ? `<button type="button" class="btn ghost mini" style="margin-inline-start:6px" onclick="App.pickAvatar(null)">شيل الصورة</button>` : ''}
+          <div class="muted" style="font-size:12px;margin-top:6px">صورة واضحة للوش — بتتقص مربع لوحدها</div></div>
+      </div>
+      <div class="card" style="margin-top:10px"><label class="f">الموبايل</label>
+        <input class="in" id="uphone" dir="ltr" inputmode="tel" placeholder="010..." value="${esc(u.phone || '')}">
+        <button class="btn block" style="margin-top:12px" id="uphBtn" onclick="App.savePhone('${uid}')">حفظ</button></div>`);
+    setTimeout(() => { const el = $('#uphone'); if(el) el.focus(); }, 50);
+  },
+  async savePhone(uid){
+    const ph = $('#uphone').value.trim();
+    if(ph && ph.replace(/\D/g, '').length < 8) return toast('الرقم ده قصير — اتأكد منه');
+    const b = $('#uphBtn'); b.disabled = true; b.textContent = 'بيحفظ...';
+    try{
+      await store.updateUser(uid, {phone:ph}); if(uid === S.me.uid) S.me.phone = ph;
+      const u = S.users[uid] || S.me, entry = {name:u.name || '', phone:ph, role:u.role || '', leaderId:u.leaderId || null};
+      if(S._avatar !== undefined) entry.photo = S._avatar || '';
+      await store.setStaff(uid, entry);
+      closeSheet(); toast('اتحفظ ✓'); render();
+    }
+    catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'حفظ'; }
   },
   async shareUnitText(id){
     const u = unitById(id); if(!u) return;
