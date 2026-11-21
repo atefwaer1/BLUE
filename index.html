@@ -1069,6 +1069,7 @@ function makeDemoStore(){
       db.unitPages[pid].units[id] = clone(data); persist();
     },
     async saveUnit(pid, id, data){ Object.assign(db.unitPages[pid].units[id], clone(data)); persist(); },
+    async renameAgent(byPage, name){ Object.entries(byPage).forEach(([pid, ids]) => ids.forEach(id => { const x = db.unitPages[pid] && db.unitPages[pid].units[id]; if(x) x.agentName = name; })); persist(); },
     async setStaff(uid, entry){ db.unitPages = db.unitPages || {}; const d = db.unitPages[STAFF_DOC] = db.unitPages[STAFF_DOC] || {units:{}, staff:{}}; d.staff = d.staff || {}; d.staff[uid] = {...(d.staff[uid] || {}), ...clone(entry)}; persist(); },
     async setAlias(from, to){ db.unitPages = db.unitPages || {}; const d = db.unitPages[LAYOUT_DOC] = db.unitPages[LAYOUT_DOC] || {units:{}, layouts:{}}; d.aliases = d.aliases || {}; d.aliases[from] = to || null; persist(); },
     async setLayout(key, entry){ db.unitPages = db.unitPages || {}; const d = db.unitPages[LAYOUT_DOC] = db.unitPages[LAYOUT_DOC] || {units:{}, layouts:{}}; d.layouts = d.layouts || {}; d.layouts[key] = clone(entry); persist(); },
@@ -1194,6 +1195,7 @@ function makeFirebaseStore(){
       await db.collection('unitPages').doc(pid).set({units:{[id]:data}}, {merge:true});
     },
     async setLayout(key, entry){ await db.collection('unitPages').doc(LAYOUT_DOC).set({layouts:{[key]:entry}}, {merge:true}); },
+    async renameAgent(byPage, name){ for(const [pid, ids] of Object.entries(byPage)){ const upd = {}; ids.forEach(id => upd[`units.${id}.agentName`] = name); await db.collection('unitPages').doc(pid).update(upd); } },
     async setStaff(uid, entry){ await db.collection('unitPages').doc(STAFF_DOC).set({staff:{[uid]:entry}}, {merge:true}); },
     async setAlias(from, to){ await db.collection('unitPages').doc(LAYOUT_DOC).set({aliases:{[from]:to || null}}, {merge:true}); },
     async deleteLayoutPhoto(ph){ await db.collection('unitPhotos').doc(ph).delete().catch(() => {}); },
@@ -1912,7 +1914,7 @@ function teamView(){
     </form>
     ${boss ? (() => { const meU = S.users[S.me.uid] || S.me; return `<div class="card" style="margin-top:12px;display:flex;align-items:center;gap:10px">
       ${avatarHtml(S.me.uid, 42)}
-      <div style="flex:1;min-width:0"><b>رقمك وصورتك</b><div class="muted" style="font-size:12.5px">${meU.phone ? `<span dir="ltr">${esc(meU.phone)}</span>` : 'الرقم مش متسجل'} · بيظهروا في الإعلانات اللي بتعملها</div></div>
+      <div style="flex:1;min-width:0"><b>اسمك ورقمك وصورتك</b><div class="muted" style="font-size:12.5px">${meU.phone ? `<span dir="ltr">${esc(meU.phone)}</span>` : 'الرقم مش متسجل'} · بيظهروا في الإعلانات اللي بتعملها</div></div>
       <button class="btn ghost mini" onclick="App.phoneSheet('${S.me.uid}')">${meU.phone ? 'تعديل' : '＋ ضيف'}</button></div>`; })() : ''}
     <h3>${boss ? 'الموظفين' : 'فريقك'}</h3>
     <div class="card" style="padding:2px 14px">
@@ -1931,7 +1933,7 @@ function teamView(){
           <select class="sel mini" onchange="App.setRole('${u.uid}', this.value)">${roleOpts(u.role)}</select>
           ${u.role === 'sales' ? `<select class="sel mini" onchange="App.setLeader('${u.uid}', this.value)">${leaderOpts(u.leaderId || '', u.uid)}</select>` : ''}
           <button class="btn ghost mini" onclick="App.pwSheet('${u.uid}')">كلمة سر جديدة</button>
-          <button class="btn ghost mini" onclick="App.phoneSheet('${u.uid}')">${u.phone && staffInfo(u.uid).photo ? 'الموبايل والصورة' : '＋ الموبايل والصورة'}</button>
+          <button class="btn ghost mini" onclick="App.phoneSheet('${u.uid}')">${u.phone && staffInfo(u.uid).photo ? 'الاسم والموبايل والصورة' : '＋ الموبايل والصورة'}</button>
         </div>` : ''}
       </div>`; }).join('') : `<div class="empty">لسه مفيش حد</div>`}
     </div>
@@ -2602,7 +2604,7 @@ Object.assign(App, {
     const u = S.users[uid] || (uid === S.me.uid ? S.me : null); if(!u) return;
     S._avatar = undefined;
     const ph = staffInfo(uid).photo;
-    openSheet(`<div class="sheet-h"><h2>الموبايل والصورة</h2><button class="x" onclick="App.close()">×</button></div>
+    openSheet(`<div class="sheet-h"><h2>الاسم والموبايل والصورة</h2><button class="x" onclick="App.close()">×</button></div>
       <p class="muted">لـ <b>${esc(u.name)}</b> — الرقم والصورة بيظهروا في إعلانات الوحدات بتاعته، والرقم بيستخدمه فريقه في زرار المعاينة.</p>
       <div class="card" style="display:flex;align-items:center;gap:12px">
         <div id="avPrev">${ph ? `<img src="${ph}" alt="" style="width:76px;height:76px;border-radius:50%;object-fit:cover">` : avatarHtml(uid, 76)}</div>
@@ -2610,7 +2612,9 @@ Object.assign(App, {
           ${ph ? `<button type="button" class="btn ghost mini" style="margin-inline-start:6px" onclick="App.pickAvatar(null)">شيل الصورة</button>` : ''}
           <div class="muted" style="font-size:12px;margin-top:6px">صورة واضحة للوش — بتتقص مربع لوحدها</div></div>
       </div>
-      <div class="card" style="margin-top:10px"><label class="f">الموبايل</label>
+      <div class="card" style="margin-top:10px"><label class="f" style="margin-top:0">الاسم</label>
+        <input class="in" id="uname" value="${esc(u.name || '')}" placeholder="الاسم اللي بيظهر في الأبليكيشن والإعلانات">
+        <label class="f">الموبايل</label>
         <input class="in" id="uphone" dir="ltr" inputmode="tel" placeholder="010..." value="${esc(u.phone || '')}">
         <button class="btn block" style="margin-top:12px" id="uphBtn" onclick="App.savePhone('${uid}')">حفظ</button></div>`);
     setTimeout(() => { const el = $('#uphone'); if(el) el.focus(); }, 50);
@@ -2619,9 +2623,14 @@ Object.assign(App, {
     const ph = $('#uphone').value.trim();
     if(ph && ph.replace(/\D/g, '').length < 8) return toast('الرقم ده قصير — اتأكد منه');
     const b = $('#uphBtn'); b.disabled = true; b.textContent = 'بيحفظ...';
+    const nm = ($('#uname') || {}).value ? $('#uname').value.trim() : '';
+    if(!nm) return toast('اكتب الاسم');
     try{
-      await store.updateUser(uid, {phone:ph}); if(uid === S.me.uid) S.me.phone = ph;
-      const u = S.users[uid] || S.me, entry = {name:u.name || '', phone:ph, role:u.role || '', leaderId:u.leaderId || null};
+      const prev = S.users[uid] || S.me, renamed = nm !== (prev.name || '');
+      await store.updateUser(uid, renamed ? {phone:ph, name:nm} : {phone:ph});
+      if(uid === S.me.uid){ S.me.phone = ph; S.me.name = nm; }
+      if(renamed){ const ids = {}; S.units.filter(x => x.agentId === uid).forEach(x => (ids[x.page] = ids[x.page] || []).push(x.id)); if(Object.keys(ids).length) await store.renameAgent(ids, nm); }
+      const u = {...prev, name:nm}, entry = {name:nm, phone:ph, role:u.role || '', leaderId:u.leaderId || null};
       if(S._avatar !== undefined) entry.photo = S._avatar || '';
       await store.setStaff(uid, entry);
       closeSheet(); toast('اتحفظ ✓'); render();
