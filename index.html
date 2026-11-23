@@ -569,7 +569,7 @@ function unitFits(u, q, purpose){
 function matchUnits(l){
   const q = reqOf(l); if(!q) return [];
   const purpose = wantPurpose(l.clientType);
-  return S.units.filter(u => unitFits(u, q, purpose)).sort((a, b) => (!!b.hot - !!a.hot) || Math.abs(unitPrice(a, purpose) - (q.budget || 0)) - Math.abs(unitPrice(b, purpose) - (q.budget || 0)));
+  return uniqUnits(S.units.filter(u => unitFits(u, q, purpose))).sort((a, b) => (!!b.hot - !!a.hot) || Math.abs(unitPrice(a, purpose) - (q.budget || 0)) - Math.abs(unitPrice(b, purpose) - (q.budget || 0)));
 }
 // شريط الطلبات: عملاء عايزين (إيجار / شراء) ولقينالهم وحدات مناسبة
 function requestsWithMatches(){
@@ -579,10 +579,17 @@ function requestsWithMatches(){
     .map(l => ({l, m:matchUnits(l)})).filter(x => x.m.length);
 }
 /* ---------- الطلبات (ريكوست من السيلز — بيظهر للفريق كله، من غير بيانات عميل) ---------- */
+// وحدة مكررة بنفس الكود (اترفعت أكتر من مرة): بنعرض نسخة واحدة بس
+function uniqUnits(list){ const seen = new Set(); return list.filter(u => { const k = String(u.code || '').trim().toLowerCase(); if(!k) return true; if(seen.has(k)) return false; seen.add(k); return true; }); }
+function dupGroups(){
+  const g = {}; S.units.forEach(u => { const k = String(u.code || '').trim().toLowerCase(); if(k) (g[k] = g[k] || []).push(u); });
+  return Object.values(g).filter(a => a.length > 1);
+}
+const unitScore = u => (u.photos || []).length * 100 + (u.loc ? 50 : 0) + (u.hot ? 40 : 0) + (u.status && u.status !== 'available' ? 10 : 0) + Object.values(u).filter(v => v !== '' && v != null).length;
 const REQ_DOC = 'meta_requests';
 const REQ_KIND = {rent:'إيجار', sale:'شراء'};
 const activeReqs = () => (S.requests || []).filter(r => r.active !== false).sort((a, b) => (b.at || 0) - (a.at || 0));
-const reqMatches = r => S.units.filter(u => unitFits(u, r.q || {}, r.kind)).sort((a, b) => (!!b.hot - !!a.hot) || Math.abs(unitPrice(a, r.kind) - ((r.q || {}).budget || 0)) - Math.abs(unitPrice(b, r.kind) - ((r.q || {}).budget || 0)));
+const reqMatches = r => uniqUnits(S.units.filter(u => unitFits(u, r.q || {}, r.kind))).sort((a, b) => (!!b.hot - !!a.hot) || Math.abs(unitPrice(a, r.kind) - ((r.q || {}).budget || 0)) - Math.abs(unitPrice(b, r.kind) - ((r.q || {}).budget || 0)));
 const canCloseReq = r => r.by === S.me.uid || isBoss() || (isLeader() && teamOf(r.by) === S.me.uid);
 function reqContact(r, small){
   const ph = staffInfo(r.by).phone || r.phone || '';
@@ -888,7 +895,8 @@ function filteredUnits(){
     if(amin || amax){ const a = unitArea(u); if(!a || (amin && a < amin) || (amax && a > amax)) return false; }
     if(qq && !searchMatch(qq, unitSearchIdx(u))) return false;
     return true;
-  }).sort((a, b) => (!!b.hot - !!a.hot) || (isSoon(b) - isSoon(a)) || ((b.createdAt || 0) - (a.createdAt || 0)));
+  }).sort((a, b) => (unitScore(b) - unitScore(a))).filter(((seen) => u => { const k = String(u.code || '').trim().toLowerCase(); if(!k) return true; if(seen.has(k)) return false; seen.add(k); return true; })(new Set()))
+    .sort((a, b) => (!!b.hot - !!a.hot) || (isSoon(b) - isSoon(a)) || ((b.createdAt || 0) - (a.createdAt || 0)));
 }
 function unitStatusText(u){
   if(u.status === 'rented'){
@@ -926,6 +934,10 @@ function unitsView(){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:6px 2px 10px">الوحدات (${S.units.filter(canSeePending).length})</h2>
       <div class="row" style="flex:none;gap:6px"><button class="btn mini" onclick="App.unitForm()">＋ وحدة</button>
       ${isBoss() ? `<label class="btn ghost mini">رفع شيت<input type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="App.invFile(this.files[0])"></label>` : ''}</div></div>
+    ${isBoss() && dupGroups().length ? (() => { const g = dupGroups(), extra = g.reduce((n, a) => n + a.length - 1, 0); return `<div class="card" style="margin-bottom:10px;background:#FEF2F2;border-color:#FCA5A5">
+      <b style="color:#B91C1C">⚠️ فيه ${extra} نسخة مكررة لـ ${g.length} وحدة (نفس الكود متسجل أكتر من مرة)</b>
+      <div class="muted" style="font-size:12.5px">غالبًا الشيت اترفع أكتر من مرة. التنظيف بيسيب نسخة واحدة من كل وحدة (اللي فيها صور ولوكيشن وبيانات أكتر) ويمسح الباقي.</div>
+      <button class="btn danger block" style="margin-top:8px" id="dedupBtn" onclick="App.dedupUnits()">🧹 نظّف الوحدات المكررة</button></div>`; })() : ''}
     ${pend ? `<button class="alert" style="margin-bottom:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.uf('st', 'pending')"><b>${pend}</b><div>وحدة متكررة مستنية موافقة المدير</div></button>` : ''}
     ${soon ? `<button class="alert" style="margin-bottom:10px" onclick="App.uf('st', 'soon')"><b>${soon}</b><div>وحدة متأجرة هتفضى خلال ${daysTxt(cfg('availRemindDays'))} أو فضيت — كلّم المالك</div></button>` : ''}
     <input class="search" id="uq" type="search" placeholder="دوّر بالعربي أو English: ذا أدرس، Palm Hills، شقة..." value="${esc(f.q)}" oninput="App.usearch(this.value)">
@@ -3809,8 +3821,24 @@ Object.assign(App, {
   },
   invCancel(){ S.inv = null; render(); },
   invAgent(i, uid){ const P = invPrepare(); const a = Object.entries(P.agents).sort((x, y) => y[1] - x[1])[i]; if(a) S.inv.agentMap[a[0]] = uid || ''; render(); },
+  async dedupUnits(){
+    if(!isBoss()) return;
+    const b = $('#dedupBtn'), g = dupGroups();
+    if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = `متأكد؟ هيتمسح ${g.reduce((n, a) => n + a.length - 1, 0)} نسخة مكررة — دوس تاني`; return; }
+    b.disabled = true; let done = 0, kept = 0;
+    for(const arr of g){
+      const sorted = [...arr].sort((x, y) => unitScore(y) - unitScore(x) || (x.createdAt || 0) - (y.createdAt || 0));
+      for(const u of sorted.slice(1)){
+        if((u.photos || []).length && (sorted[0].photos || []).length && u.photos.join() !== sorted[0].photos.join()){ kept++; continue; }   // نسخة فيها صور مختلفة: مش بنمسحها
+        try{ await store.deleteUnit(u.page, u.id, u.photos || []); done++; b.textContent = `بيمسح... ${done}`; }catch(e){}
+      }
+    }
+    await store.addActivity({type:'upload', at:Date.now(), by:S.me.uid, byName:S.me.name, note:`🧹 تنظيف الوحدات المكررة: اتمسح ${done} نسخة`, teamId:null}).catch(() => {});
+    toast(`اتمسح ${done} نسخة مكررة ✓${kept ? ` — وفضل ${kept} فيهم صور مختلفة، راجعهم بإيدك` : ''}`); render();
+  },
   async invDo(){
     const P = invPrepare(), now = Date.now(), b = $('#invBtn');
+    if(S._invBusy) return; S._invBusy = true; setTimeout(() => { S._invBusy = false; }, 15000);
     b.disabled = true;
     const units = [], owners = [];
     P.units.forEach((x, i) => {
