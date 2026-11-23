@@ -224,33 +224,38 @@ label.chk input{width:20px;height:20px;accent-color:var(--ok)}
 .seg button{flex:1;border:0;background:none;border-radius:9px;padding:8px 4px;font-weight:700;font-size:14px;color:var(--muted)}
 .seg button i{font-style:normal;font-size:11.5px;opacity:.8;margin-right:4px}
 .seg button.on{background:var(--card);color:var(--navy);box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.seg button.on.lead{background:linear-gradient(135deg,#EA580C,#DC2626);color:#fff}
+.seg button.on.lead{background:linear-gradient(135deg,#16A34A,#15803D);color:#fff}
 .seg button.on.data{background:var(--navy);color:#fff}
-.leadhero{display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,#EA580C,#DC2626);color:#fff;border-radius:var(--r);padding:12px 14px;margin-top:10px;border:0;width:100%;text-align:right;box-shadow:0 4px 14px rgba(220,38,38,.25)}
+.leadhero{display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,#16A34A,#15803D);color:#fff;border-radius:var(--r);padding:12px 14px;margin-top:10px;border:0;width:100%;text-align:right;box-shadow:0 4px 14px rgba(22,163,74,.25)}
 .leadhero b{font-size:16px}
 .leadhero .lh-n{text-align:center;min-width:58px}
 .leadhero .lh-n b{display:block;font-size:24px;line-height:1.1}
 .leadhero .lh-n span{font-size:11px;opacity:.9}
 .datahero{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-top:10px}
-.lead.is-lead{border-right:5px solid #EA580C}
+.lead.is-lead{border-right:5px solid #16A34A}
 .lead.is-data{border-right:5px solid #CBD5E1}
-.lead.fresh{background:#FFF7ED;border-color:#FDBA74;border-right:5px solid #DC2626;box-shadow:0 2px 10px rgba(234,88,12,.15)}
-.freshbar{font-size:12px;font-weight:800;color:#B91C1C;margin-bottom:4px}
+.lead.fresh{background:#F0FDF4;border-color:#86EFAC;border-right:5px solid #16A34A;box-shadow:0 2px 10px rgba(22,163,74,.15)}
+.freshbar{font-size:12px;font-weight:800;color:#15803D;margin-bottom:4px}
+.lead.nudged{background:#FEF2F2;border-color:#FCA5A5;border-right:5px solid #DC2626}
+.nudgebar{font-size:12px;font-weight:800;color:#B91C1C;margin-bottom:4px}
 .ctp{--c:#64748B;font-size:11.5px;font-weight:800;color:#fff;background:var(--c);border-radius:6px;padding:1px 7px;margin-right:4px;vertical-align:middle;white-space:nowrap}
 .kindtag{font-size:11.5px;font-weight:800;border-radius:99px;padding:2px 9px;white-space:nowrap}
-.kindtag.lead{background:#FFEDD5;color:#C2410C}.kindtag.data{background:#EEF2F8;color:var(--navy)}
-.nav .dot.fire{background:#EA580C}
-.nav button.navlead:not(.on){color:#C2410C}
+.kindtag.lead{background:#DCFCE7;color:#15803D}.kindtag.data{background:#EEF2F8;color:var(--navy)}
+.nav .dot.fire{background:#16A34A}
+.nav button.navlead:not(.on){color:#15803D}
 /* شرايط الهوت ديل والطلبات */
 .strip{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}
 .strip::-webkit-scrollbar{display:none}
 .scard{flex:none;width:230px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;text-align:right;display:flex;flex-direction:column}
 .scard .sc-body{border:0;background:none;padding:0;text-align:right;flex:1;display:block;width:100%}
-.scard.hot{border:2px solid #F97316;background:linear-gradient(180deg,#FFF7ED,#fff)}
+.scard.hot{border:0;background:#fff;color:#0F172A;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.hotband{background:linear-gradient(135deg,#DC2626,#991B1B);color:#fff;border-radius:var(--r);padding:12px 12px 6px;margin-top:12px;box-shadow:0 4px 14px rgba(220,38,38,.3)}
+.hotband h3{color:#fff!important;margin:0 2px 10px;font-size:16px}
+.hotband .scard .muted{color:#64748B}
 .scard.req{border:1.5px solid #A7F3D0}
 .sc-foot{display:flex;justify-content:space-between;gap:6px;font-size:12px;margin-top:4px}
-.lead.unit.hot{border:2px solid #F97316;background:#FFFBF5}
-.hotcard{background:linear-gradient(135deg,#FFF7ED,#FFEDD5);border:2px solid #F97316}
+.lead.unit.hot{border:2px solid #DC2626;background:#FEF2F2}
+.hotcard{background:linear-gradient(135deg,#FEF2F2,#FEE2E2);border:2px solid #DC2626}
 /* التقارير */
 .repcard.due{background:#FFFBEB;border:1.5px solid #FCD34D;color:#78350F}
 .repcard.late{background:#FEF2F2;border:1.5px solid #FCA5A5;color:#7F1D1D}
@@ -545,6 +550,7 @@ function reqOf(l){
   }
   return (q.cat || q.proj || q.budget || q.beds || q.area) ? q : null;
 }
+const reqByName = l => (l.req && l.req.byName) || (l.createdBy ? userName(l.createdBy) : l.assignedTo ? userName(l.assignedTo) : '—');
 const reqText = q => !q ? '' : [UNIT_CATS[q.cat], q.beds && (q.beds + '+ غرف'), q.proj, q.area && (q.area + '+ م²'), q.budget && ('لحد ' + money(q.budget)), FURNISH[q.furn]].filter(Boolean).join(' · ');
 function unitFits(u, q, purpose){
   if(u.pendingDup || u.status === 'sold' || u.status === 'hold') return false;
@@ -572,16 +578,57 @@ function requestsWithMatches(){
     .sort((a, b) => ((b.req && b.req.at) || b.lastContactAt || b.createdAt || 0) - ((a.req && a.req.at) || a.lastContactAt || a.createdAt || 0)).slice(0, 300)
     .map(l => ({l, m:matchUnits(l)})).filter(x => x.m.length);
 }
+/* ---------- الطلبات (ريكوست من السيلز — بيظهر للفريق كله، من غير بيانات عميل) ---------- */
+const REQ_DOC = 'meta_requests';
+const REQ_KIND = {rent:'إيجار', sale:'شراء'};
+const activeReqs = () => (S.requests || []).filter(r => r.active !== false).sort((a, b) => (b.at || 0) - (a.at || 0));
+const reqMatches = r => S.units.filter(u => unitFits(u, r.q || {}, r.kind)).sort((a, b) => (!!b.hot - !!a.hot) || Math.abs(unitPrice(a, r.kind) - ((r.q || {}).budget || 0)) - Math.abs(unitPrice(b, r.kind) - ((r.q || {}).budget || 0)));
+const canCloseReq = r => r.by === S.me.uid || isBoss() || (isLeader() && teamOf(r.by) === S.me.uid);
+function reqContact(r, small){
+  const ph = staffInfo(r.by).phone || r.phone || '';
+  if(!ph || r.by === S.me.uid) return '';
+  const msg = encodeURIComponent(`أهلاً ${String(r.byName || '').split(' ')[0]}، بخصوص طلبك (${REQ_KIND[r.kind] || ''}): ${r.text}`);
+  return `<a class="btn green mini" href="tel:${esc(normalizePhone(ph))}" onclick="event.stopPropagation()">${ICON.phone}${small ? '' : ' اتصال'}</a>
+    <a class="btn wa mini" href="https://wa.me/${waNum(ph)}?text=${msg}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${ICON.wa}${small ? '' : ' واتساب'}</a>`;
+}
 function requestsStrip(){
-  const list = requestsWithMatches();
+  const list = activeReqs();
   const head = t => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>${t}</h3><button class="btn mini" style="background:#0F766E" onclick="App.newReq()">＋ طلب جديد</button></div>`;
-  if(!list.length) return head('📌 طلبات العملاء') + `<div class="card muted stripempty">مفيش طلبات ليها وحدات مناسبة دلوقتي — دوس "＋ طلب جديد" واكتب أو قول طلب العميل، والسيستم هيدوّرله على وحدات</div>`;
-  return head(`📌 طلبات العملاء — لقينالها وحدات (${list.length})`) + `
-  <div class="strip">${list.slice(0, 15).map(({l, m}) => `<button class="scard req" onclick="App.open('${l.id}', 'match')">
-    <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><b>${esc(l.name || 'عميل')}</b>${ctPill(l.clientType)}</div>
-    <div class="muted" style="font-size:12px;min-height:34px">${esc(reqText(reqOf(l)))}</div>
-    <div class="sc-foot"><span style="color:var(--ok);font-weight:800">${m.length} وحدة مناسبة</span>${isAdmin() && l.assignedTo ? `<span class="muted">${esc(userName(l.assignedTo))}</span>` : ''}</div>
-  </button>`).join('')}</div>`;
+  if(!list.length) return head('📌 الطلبات') + `<div class="card muted stripempty">مفيش طلبات دلوقتي — دوس "＋ طلب جديد" واكتب أو قول اللي بتدور عليه، والطلب هيظهر للفريق كله والسيستم هيدوّرله على وحدات</div>`;
+  return head(`📌 الطلبات (${list.length})`) + `
+  <div class="strip">${list.slice(0, 30).map(r => { const m = reqMatches(r).length, ph = staffInfo(r.by).phone || r.phone || ''; return `<div class="scard req">
+    <button class="sc-body" onclick="App.openReq('${r.id}')">
+      <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><span class="ctp" style="--c:${r.kind === 'rent' ? '#1E5BB8' : '#0F766E'}">${REQ_KIND[r.kind] || 'طلب'}</span><span class="muted" style="font-size:11px">${ago(r.at)}</span></div>
+      <div style="font-size:13px;margin-top:4px;min-height:36px;line-height:1.5">${esc(r.text.length > 90 ? r.text.slice(0, 90) + '…' : r.text)}</div>
+      <div style="font-size:12px;margin-top:4px">📝 <b>${esc(r.byName || '')}</b>${ph ? ` · <span dir="ltr">${esc(ph)}</span>` : ''}</div>
+      <div class="sc-foot"><span style="color:${m ? 'var(--ok)' : 'var(--muted)'};font-weight:800">${m ? m + ' وحدة مناسبة' : 'لسه مفيش وحدة مناسبة'}</span></div>
+    </button>
+    <div class="row" style="margin-top:6px">${reqContact(r, false)}</div>
+  </div>`; }).join('')}</div>`;
+}
+function reqSheet(r){
+  const m = reqMatches(r);
+  return `<div class="sheet-h"><div><h2>📌 طلب ${REQ_KIND[r.kind] || ''}</h2><span class="muted" style="font-size:12.5px">${esc(r.byName || '')} · ${ago(r.at)}</span></div><button class="x" onclick="App.close()">×</button></div>
+    <div class="card" style="margin-top:10px;white-space:pre-wrap;font-size:15px;line-height:1.7">${esc(r.text)}</div>
+    ${reqText(r.q) ? `<div class="muted" style="font-size:12.5px;margin-top:6px">السيستم فهم: ${esc(reqText(r.q))}</div>` : ''}
+    <div class="card" style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">${avatarHtml(r.by, 40)}
+      <div style="flex:1;min-width:120px"><b>${esc(r.byName || '')}</b><div class="muted" dir="ltr" style="font-size:12.5px">${esc(staffInfo(r.by).phone || r.phone || '')}</div></div>${reqContact(r, false)}</div>
+    <h3>🏠 وحدات مناسبة (${m.length})</h3>
+    ${m.length ? m.slice(0, 30).map(unitItem).join('') : '<div class="card muted" style="text-align:center;font-size:13px">لسه مفيش وحدة مناسبة — أول ما تنزل وحدة تناسب الطلب هتظهر هنا</div>'}
+    ${canCloseReq(r) ? `<button class="btn ghost block" style="margin-top:14px" id="rqClose" onclick="App.closeReq('${r.id}')">✓ الطلب خلص — شيله</button>` : ''}`;
+}
+function newReqSheet(){
+  return `<div class="sheet-h"><h2>📌 طلب جديد</h2><button class="x" onclick="App.close()">×</button></div>
+    <div class="muted" style="font-size:12.5px">اكتب أو قول اللي بتدور عليه، والطلب هيظهر للفريق كله باسمك ورقمك. من غير بيانات العميل.</div>
+    <div class="seg" style="margin-top:10px"><button id="rkRent" class="on data" onclick="App.reqKind('rent')">إيجار</button><button id="rkSale" onclick="App.reqKind('sale')">شراء</button></div>
+    <textarea class="in" id="rqText" style="min-height:100px;margin-top:10px" placeholder="مثلاً: عايز شقة 3 أوض مفروشة في زايد ريزيدنس لحد 40 ألف"></textarea>
+    ${SpeechRec ? `<button type="button" class="btn ghost mini" style="margin-top:6px" id="rqMic" onclick="App.reqMic()">🎤 اتكلم ويتكتب</button>` : `<div class="muted" style="font-size:12px;margin-top:6px">💡 تقدر تدوس على المايك 🎤 اللي في الكيبورد وتتكلم.</div>`}
+    <button class="btn block" style="margin-top:14px;background:#0F766E" id="rqSave" onclick="App.saveNewReq()">انشر الطلب للفريق</button>`;
+}
+function unitReqsBlock(u){
+  const rs = activeReqs().filter(r => unitFits(u, r.q || {}, r.kind));
+  if(!rs.length) return '';
+  return `<h3>📌 طلبات بتدور على وحدة زي دي (${rs.length})</h3>` + rs.map(r => `<button class="lead" onclick="App.openReq('${r.id}')"><div class="lead-top"><b>${esc(r.byName || '')}</b><span class="ctp" style="--c:${r.kind === 'rent' ? '#1E5BB8' : '#0F766E'}">${REQ_KIND[r.kind] || ''}</span></div><div class="lead-sub">${esc(r.text)}</div></button>`).join('');
 }
 function unitMatchesBlock(u){
   const list = S.leads.filter(l => !l.movedToUnit && OPEN.has(l.status) && ['tenant', 'buyer'].includes(l.clientType))
@@ -810,6 +857,7 @@ function setUnits(pages){
   S.staff = (pages && pages[STAFF_DOC] && pages[STAFF_DOC].staff) || {};
   S.aliases = {}; Object.entries((pages && pages[LAYOUT_DOC] && pages[LAYOUT_DOC].aliases) || {}).forEach(([k, v]) => { if(v && v !== k) S.aliases[k] = v; });
   S.settings = (pages && pages[SETTINGS_DOC]) || {}; applyTheme(S.settings.theme);
+  S.requests = Object.entries((pages && pages[REQ_DOC] && pages[REQ_DOC].requests) || {}).filter(([, r]) => r && r.text).map(([id, r]) => ({...r, id}));
   S.reports = {}; S.reportDocs = [];
   Object.entries(pages || {}).forEach(([pid, p]) => { if(!pid.startsWith(REPORT_DOC)) return; S.reportDocs.push(pid); Object.entries((p && p.reports) || {}).forEach(([d, m]) => { S.reports[d] = {...(S.reports[d] || {}), ...m}; }); });
   Object.entries(pages || {}).forEach(([pid, p]) => {
@@ -1222,6 +1270,7 @@ function unitSheet(u){
   <h3>المالك — تواصل مع العميل</h3>
   <div class="card" id="ownerBox">${canSeeOwner(u) ? '<span class="muted">بيحمّل...</span>' : `<span class="muted">🔒 بيانات المالك مع ${esc(u.agentName || 'السيلز بتاعها')} والمديرين بس</span>`}</div>
 
+  ${unitReqsBlock(u)}
   ${unitMatchesBlock(u)}
   ${canEditUnit(u) ? `<div class="row" style="margin-top:14px"><button class="btn" onclick="App.unitForm('${u.id}')">تعديل الوحدة</button></div>` : ''}
   ${isBoss() ? `<div style="margin-top:14px;text-align:center"><button class="btn danger" id="udelBtn" onclick="App.delUnit('${u.id}')">امسح الوحدة</button></div>` : ''}`;
@@ -1586,6 +1635,7 @@ function makeDemoStore(){
       const deep = (t, f) => { Object.entries(f).forEach(([k, v]) => { if(v && typeof v === 'object' && !Array.isArray(v)){ t[k] = t[k] && typeof t[k] === 'object' ? t[k] : {}; deep(t[k], v); } else t[k] = v; }); };
       deep(cur, clone(data)); persist(); },
     async delMeta(doc){ if(db.unitPages) delete db.unitPages[doc]; persist(); },
+    async delMetaKey(doc, field, key){ const d = db.unitPages && db.unitPages[doc]; if(d && d[field]) delete d[field][key]; persist(); },
     async renameAgent(byPage, name){ Object.entries(byPage).forEach(([pid, ids]) => ids.forEach(id => { const x = db.unitPages[pid] && db.unitPages[pid].units[id]; if(x) x.agentName = name; })); persist(); },
     async setStaff(uid, entry){ db.unitPages = db.unitPages || {}; const d = db.unitPages[STAFF_DOC] = db.unitPages[STAFF_DOC] || {units:{}, staff:{}}; d.staff = d.staff || {}; d.staff[uid] = {...(d.staff[uid] || {}), ...clone(entry)}; persist(); },
     async setAlias(from, to){ db.unitPages = db.unitPages || {}; const d = db.unitPages[LAYOUT_DOC] = db.unitPages[LAYOUT_DOC] || {units:{}, layouts:{}}; d.aliases = d.aliases || {}; d.aliases[from] = to || null; persist(); },
@@ -1726,6 +1776,7 @@ function makeFirebaseStore(){
     },
     async setMeta(doc, data){ await db.collection('unitPages').doc(doc).set(data, {merge:true}); },
     async delMeta(doc){ await db.collection('unitPages').doc(doc).delete(); },
+    async delMetaKey(doc, field, key){ await db.collection('unitPages').doc(doc).update({[`${field}.${key}`]:FV.delete()}); },
     async deleteUnit(pid, id, photos){
       await db.collection('unitPages').doc(pid).update({[`units.${id}`]:FV.delete()});
       await db.collection('unitOwners').doc(id).delete().catch(() => {});
@@ -1870,8 +1921,10 @@ function onAuth(me){
     S.leads = list; S.leadsLoaded = true; vwResume(); render();
   }));
   S.unsub.push(store.onActivities(a => { S.acts = a; if(S.tab === 'activity') render(); }));
-  S.photoCache = {}; S.ownerCache = {}; S.inv = null; S.units = []; S.unitPages = {};
-  S.unsub.push(store.onUnits(pages => { setUnits(pages); S.ownerCache = {}; if(['units','today','home','leads','data'].includes(S.tab)) render(); if(isBoss()){ setTimeout(backfillOwnerKeys, 3000); pruneReports(); } }));
+  S.photoCache = {}; S.ownerCache = {}; S.inv = null; S.units = []; S.unitPages = {}; S._unitsSeen = false;
+  S.unsub.push(store.onUnits(pages => { const prevReq = new Set((S.requests || []).map(r => r.id)), hadUnits = !!S._unitsSeen; setUnits(pages); S._unitsSeen = true;
+    if(hadUnits){ const nr = (S.requests || []).filter(r => !prevReq.has(r.id) && r.by !== S.me.uid && r.active !== false); if(nr.length){ toast(`📌 طلب جديد من ${nr[0].byName}: ${nr[0].text.slice(0, 60)}`); beep('info'); } }
+    if(isBoss()) (S.requests || []).filter(r => r.active === false && Date.now() - (r.closedAt || r.at || 0) > 30 * DAY).slice(0, 20).forEach(r => store.delMetaKey(REQ_DOC, 'requests', r.id).catch(() => {})); S.ownerCache = {}; if(['units','today','home','leads','data'].includes(S.tab)) render(); if(isBoss()){ setTimeout(backfillOwnerKeys, 3000); pruneReports(); } }));
   render();
 }
 
@@ -2062,7 +2115,7 @@ function applyTheme(t){
     html,body{background:${bg};color:${ink}} .sheet{background:${bg}} .nav{background:${card}} .search,.in,select.sel{color:${ink}}
     .lead-top b,.kpi b:not([style]),h2,.details div{color:${ink}} .demo-bar{opacity:.9}
     h3{color:color-mix(in srgb, ${ink} 70%, #3B82F6)} .btn.ghost{background:color-mix(in srgb, ${ink} 10%, ${card});color:${ink}} .seg{background:color-mix(in srgb, ${ink} 12%, ${card})}
-    .lead.fresh{background:color-mix(in srgb, #EA580C 14%, ${card})} .lead.unit.hot,.scard.hot,.hotcard{background:color-mix(in srgb, #F97316 14%, ${card})}
+    .lead.fresh{background:color-mix(in srgb, #16A34A 16%, ${card})} .lead.nudged{background:color-mix(in srgb, #DC2626 16%, ${card})} .lead.unit.hot,.hotcard{background:color-mix(in srgb, #DC2626 14%, ${card})}
     .nudge,.reprow.miss,.repcard.late{background:color-mix(in srgb, #DC2626 14%, ${card});color:${ink}} .reprow.lateb,.repcard.due{background:color-mix(in srgb, #F59E0B 14%, ${card});color:${ink}}
     .repcard.ok{background:color-mix(in srgb, #16A34A 14%, ${card});color:${ink}}
     ${ok(t.head) ? `.top{background:${t.head};border-bottom:1px solid #262626} .nav{background:${t.head};border-top-color:#262626} .nav button.on{background:#262626;color:#fff} .chip.on,.btn:not(.ghost):not(.danger):not(.green):not(.wa):not(.viber):not(.tg):not(.imo):not(.nudgebtn){background:#2A2A2A} .seg button.on.data{background:#2A2A2A} .phone,.price{color:#93C5FD} .btn.nudgebtn{background:#3B0D0D;color:#FCA5A5}` : ''} .quickin{background:${card}} .datahero{background:${card}} #toast{background:#0F172A;color:#fff}`;
@@ -2117,8 +2170,8 @@ function nudgesCard(){
 /* ---------------- الهوت ديل (شريط في الرئيسية) ---------------- */
 function hotStrip(){
   const list = S.units.filter(u => u.hot && !u.pendingDup && u.status !== 'sold').sort((a, b) => (b.hot.at || 0) - (a.hot.at || 0));
-  if(!list.length) return `<h3>🔥 هوت ديل</h3><div class="card muted stripempty">مفيش هوت ديل دلوقتي — من أي وحدة دوس "🔥 اعملها هوت ديل" وهتظهر هنا للفريق كله</div>`;
-  return `<div style="display:flex;justify-content:space-between;align-items:center"><h3>🔥 هوت ديل — انشروها بسرعة (${list.length})</h3>${list.length > 3 ? `<button class="btn ghost mini" onclick="App.unitsHot()">الكل</button>` : ''}</div>
+  if(!list.length) return `<div class="hotband"><h3>🔥 هوت ديل</h3><div style="font-size:12.5px;opacity:.95;padding:0 2px 8px">مفيش هوت ديل دلوقتي — من أي وحدة دوس "🔥 اعملها هوت ديل" وهتظهر هنا للفريق كله</div></div>`;
+  return `<div class="hotband"><div style="display:flex;justify-content:space-between;align-items:center"><h3>🔥 هوت ديل — انشروها بسرعة (${list.length})</h3>${list.length > 3 ? `<button class="btn mini" style="background:#fff;color:#B91C1C" onclick="App.unitsHot()">الكل</button>` : ''}</div>
   <div class="strip">${list.slice(0, 20).map(u => `<div class="scard hot">
     <button class="sc-body" onclick="App.openUnit('${u.id}')">
       <div style="display:flex;justify-content:space-between;gap:6px"><b>${esc([AD_TYPE_AR[String(u.type || '').toLowerCase().trim()] || u.type, u.project].filter(Boolean).join(' · ') || 'وحدة')}</b><span class="pill" style="--c:${PURPOSE_COLOR[u.purpose] || '#64748B'}">${PURPOSE[u.purpose] || ''}</span></div>
@@ -2127,7 +2180,7 @@ function hotStrip(){
       ${u.hot.note ? `<div style="font-size:12px;color:#9A3412;margin-top:2px">${esc(u.hot.note)}</div>` : ''}
     </button>
     <div class="row" style="margin-top:6px"><button class="btn mini" onclick="App.adSheet('${u.id}')">📣 إعلان</button><button class="btn mini" style="background:#1877F2" onclick="App.mpSheet('${u.id}')">🛒 ماركت</button></div>
-  </div>`).join('')}</div>`;
+  </div>`).join('')}</div></div>`;
 }
 /* ---------------- التقرير اليومي (لازم يتبعت قبل الميعاد اللي الأدمن بيحدده) ---------------- */
 const REPORT_DOC = 'meta_reports_';
@@ -2292,8 +2345,8 @@ function leadItem(l){
   if(due && l.status === 'viewing') due.txt = '🚶 ' + due.txt.replace('متابعة', 'معاينة');
   const sub = [l.project, l.unit && ('وحدة ' + l.unit)].filter(Boolean).join(' · ');
   const hotNew = isLeadK(l) && l.status === 'new' && !l.lastContactAt;
-  return `<button class="lead ${isLeadK(l) ? 'is-lead' : 'is-data'}${hotNew || l.nudge ? ' fresh' : ''}" onclick="App.open('${l.id}')">
-    ${l.nudge ? `<div class="freshbar">⚠️ ${myNudge(l) ? 'تنبيه من ' + esc(l.nudge.byName) : 'متنبّه من ' + esc(l.nudge.byName)}: ${esc(l.nudge.msg)}</div>` : ''}
+  return `<button class="lead ${isLeadK(l) ? 'is-lead' : 'is-data'}${l.nudge ? ' nudged' : hotNew ? ' fresh' : ''}" onclick="App.open('${l.id}')">
+    ${l.nudge ? `<div class="nudgebar">⚠️ ${myNudge(l) ? 'تنبيه من ' + esc(l.nudge.byName) : 'متنبّه من ' + esc(l.nudge.byName)}: ${esc(l.nudge.msg)}</div>` : ''}
     ${hotNew ? `<div class="freshbar">🔥 ليد جديد ${l.assignedAt || l.createdAt ? '· وصل ' + ago(l.assignedAt || l.createdAt) : ''} — كلّمه دلوقتي</div>` : ''}
     <div class="lead-top"><b>${esc(l.name || 'بدون اسم')} ${ctPill(l.clientType)}</b><span class="pill" style="--c:${st.color}">${st.label}</span></div>
     <div class="lead-sub">${esc(sub || l.phone)}</div>
@@ -2362,7 +2415,7 @@ function todayView(){
     <div class="kpis">
       <div class="kpi late"><b>${over.length + late.length}</b><span>متأخرين</span></div>
       <div class="kpi today"><b>${due.length}</b><span>متابعات النهارده</span></div>
-      <div class="kpi" style="border-color:#FDBA74;background:#FFF7ED"><b style="color:#C2410C">${freshLeads.length}</b><span>🔥 ليدز جديدة مستنية</span></div>
+      <div class="kpi" style="border-color:#86EFAC;background:#F0FDF4"><b style="color:#15803D">${freshLeads.length}</b><span>🔥 ليدز جديدة مستنية</span></div>
       <div class="kpi ok"><b>${calls}</b><span>مكالمات النهارده</span></div>
     </div>
     ${myReportCard()}
@@ -2744,7 +2797,7 @@ const App = window.App = {
     const l = leadById(S.openId); if(!l) return;
     const g = id => ($(id) ? $(id).value.trim() : '');
     const req = {cat:g('#rqCat'), beds:parseInt(normNum(g('#rqBeds'))) || null, proj:g('#rqProj'), budget:moneyNums(g('#rqBud'))[0] || null,
-      area:parseInt(normNum(g('#rqArea'))) || null, furn:g('#rqFurn'), at:Date.now(), _manual:true};
+      area:parseInt(normNum(g('#rqArea'))) || null, furn:g('#rqFurn'), at:Date.now(), _manual:true, by:(l.req && l.req.by) || S.me.uid, byName:(l.req && l.req.byName) || S.me.name};
     try{ await store.updateLeads([l.id], {req}, null); toast('اتحفظ الطلب ✓'); const nl = leadById(l.id); if(nl) { openSheet(leadSheet({...nl, req})); setTimeout(() => { const el = $('#matchBox'); if(el) el.scrollIntoView({block:'start'}); }, 80); } }
     catch(e){ toast(fbError(e)); }
   },
@@ -3016,7 +3069,41 @@ Object.assign(App, {
     }catch(e){ toast(fbError(e)); }
   },
   newLead(){ recCleanup(); S._reqMode = false; openSheet(newLeadSheet()); },
-  newReq(){ recCleanup(); S._reqMode = true; openSheet(newLeadSheet()); const ct = $('#nlCt'); if(ct){ ct.value = 'tenant'; App.nlCt(); } setTimeout(() => { const r = $('#nlRaw'); if(r) r.focus(); }, 80); },
+  newReq(){ recCleanup(); S._rqKind = 'rent'; openSheet(newReqSheet()); },
+  reqKind(k){ S._rqKind = k; $('#rkRent').className = k === 'rent' ? 'on data' : ''; $('#rkSale').className = k === 'sale' ? 'on data' : ''; },
+  reqMic(){
+    if(!SpeechRec) return;
+    const btn = $('#rqMic');
+    if(S.dic){ try{ S.dic.stop(); }catch(e){} S.dic = null; if(btn){ btn.classList.remove('listening'); btn.textContent = '🎤 اتكلم ويتكتب'; } return; }
+    const r = new SpeechRec(); r.lang = 'ar-EG'; r.continuous = true; r.interimResults = false;
+    r.onresult = e => { const ta = $('#rqText'); if(!ta) return; for(let i = e.resultIndex; i < e.results.length; i++) if(e.results[i].isFinal) ta.value = (ta.value ? ta.value.trim() + ' ' : '') + e.results[i][0].transcript.trim(); };
+    r.onend = () => { if(S.dic === r){ S.dic = null; const b = $('#rqMic'); if(b){ b.classList.remove('listening'); b.textContent = '🎤 اتكلم ويتكتب'; } } };
+    try{ r.start(); }catch(e){ return toast('مش قادر أشغّل الكتابة بالصوت'); }
+    S.dic = r; if(btn){ btn.classList.add('listening'); btn.textContent = '● بيسمعك... دوس توقف'; }
+  },
+  async saveNewReq(){
+    const text = ($('#rqText').value || '').trim();
+    if(text.length < 5) return toast('اكتب الطلب الأول');
+    const p = parseLeadText(text);
+    let kind = S._rqKind || 'rent';
+    if(p.ct === 'buyer' && !/ايجار|ياجر|rent/.test(AR_NORM(text))) kind = 'sale';
+    const q = {}; ['cat', 'beds', 'budget', 'area', 'furn', 'proj'].forEach(k => { if(p[k] != null && p[k] !== '') q[k] = p[k]; });
+    const id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const r = {text, kind, q, by:S.me.uid, byName:S.me.name, phone:staffInfo(S.me.uid).phone || '', at:Date.now(), active:true, teamId:teamOf(S.me.uid)};
+    const b = $('#rqSave'); b.disabled = true; b.textContent = 'بينشر...';
+    try{
+      await store.setMeta(REQ_DOC, {requests:{[id]:r}});
+      await store.addActivity({type:'upload', at:r.at, by:S.me.uid, byName:S.me.name, note:`📌 طلب ${REQ_KIND[kind]}: ${text}`, teamId:r.teamId}).catch(() => {});
+      toast('الطلب اتنشر للفريق ✓'); S.requests = [...(S.requests || []).filter(x => x.id !== id), {...r, id}]; App.openReq(id);
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'انشر الطلب للفريق'; }
+  },
+  openReq(id){ const r = (S.requests || []).find(x => x.id === id); if(!r) return toast('الطلب ده مش موجود'); recCleanup(); openSheet(reqSheet(r)); },
+  async closeReq(id){
+    const r = (S.requests || []).find(x => x.id === id); if(!r || !canCloseReq(r)) return;
+    const b = $('#rqClose'); if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'متأكد؟ دوس تاني'; return; }
+    try{ await store.setMeta(REQ_DOC, {requests:{[id]:{active:false, closedAt:Date.now(), closedBy:S.me.name}}}); closeSheet(); toast('الطلب اتشال ✓'); render(); }
+    catch(e){ toast(fbError(e)); }
+  },
   nlCt(){
     const v = $('#nlCt').value;
     $('#nlFurnW').classList.toggle('hidden', !['owner_rent', 'tenant'].includes(v));
@@ -3055,8 +3142,8 @@ Object.assign(App, {
     const note = $('#nlNote').value.trim() || raw;
     const ct = $('#nlCt').value || null;
     const rq = ['tenant', 'buyer'].includes(ct) ? {cat:$('#nlCat').value || '', beds:parseInt(normNum($('#nlBeds').value)) || null,
-      budget:moneyNums($('#nlBud').value)[0] || null, area:parseInt(normNum($('#nlArea').value)) || null, at:now} : null;
-    const hasRq = rq && (rq.cat || rq.beds || rq.budget || rq.area);
+      budget:moneyNums($('#nlBud').value)[0] || null, area:parseInt(normNum($('#nlArea').value)) || null, at:now, by:S.me.uid, byName:S.me.name} : null;
+    const hasRq = rq && (rq.cat || rq.beds || rq.budget || rq.area || S._reqMode);
     const lead = {name:$('#nlName').value.trim(), phone, project:$('#nlProj').value.trim(), unit:$('#nlUnit').value.trim(), extra:note ? {'ملاحظات':note} : {},
       clientType:ct, source:$('#nlSrc').value || null, ...brokerVal('nl', $('#nlSrc').value), furnished:['owner_rent', 'tenant'].includes(ct) ? ($('#nlFurn').value || null) : null,
       status:'new', assignedTo:to, teamId:teamOf(to), assignedAt:to ? now : null, createdAt:now, createdBy:S.me.uid,
@@ -3440,7 +3527,7 @@ Object.assign(App, {
       </div>
       <div class="card" style="margin-top:10px">
         <b>2. انسخ الإعلان وافتح الماركت بليس</b>
-        <div class="muted" style="font-size:12.5px">الكلام بيتنسخ (عربي + English) باسمك ورقمك${c.phone ? '' : ' — رقمك مش متسجل!'}، وبعدين الماركت بليس بيفتح على "إضافة عقار".</div>
+        <div class="muted" style="font-size:12.5px">الكلام بيتنسخ (عربي + English) باسمك ورقمك${c.phone ? '' : ' — رقمك مش متسجل!'}، وبعدين أبليكيشن فيسبوك بيفتح على الماركت بليس. لو فتح على الصفحة الرئيسية للماركت بليس، دوس "بيع / Create listing" واختار عقار.</div>
         <button class="btn block" style="margin-top:8px;background:#1877F2" onclick="App.mpOpen()">📋 انسخ وافتح الماركت بليس</button>
       </div>
       <div class="card" style="margin-top:10px">
@@ -3469,7 +3556,18 @@ Object.assign(App, {
   },
   mpOpen(){
     const t = S._mpText || '';
-    const go = () => { window.open('https://www.facebook.com/marketplace/create/rental', '_blank'); };
+    const web = 'https://www.facebook.com/marketplace/create/rental', ua = navigator.userAgent || '';
+    // بيحاول يفتح أبليكيشن فيسبوك نفسه على الماركت بليس، ولو مش متسطب يفتحه في المتصفح
+    const go = () => {
+      if(/android/i.test(ua)){ location.href = `intent://www.facebook.com/marketplace/create/rental#Intent;scheme=https;package=com.facebook.katana;S.browser_fallback_url=${encodeURIComponent(web)};end`; return; }
+      if(/iphone|ipad|ipod/i.test(ua)){
+        let left = false; const onHide = () => { left = true; }; document.addEventListener('visibilitychange', onHide, {once:true});
+        location.href = 'fb://marketplace';
+        setTimeout(() => { if(!left && !document.hidden) window.open(web, '_blank'); }, 1800);
+        return;
+      }
+      window.open(web, '_blank');
+    };
     try{ navigator.clipboard.writeText(t).then(() => { toast('الإعلان اتنسخ ✓ — الصقه في الوصف'); go(); }, () => go()); }catch(e){ go(); }
   },
   /* الهوت ديل */
