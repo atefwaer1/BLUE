@@ -276,6 +276,8 @@ label.chk input{width:20px;height:20px;accent-color:var(--ok)}
 .colrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-weight:600;font-size:13.5px}
 .colrow input[type=color]{width:54px;height:36px;border:1px solid var(--line);border-radius:10px;padding:2px;background:var(--card)}
 .stripempty{font-size:12.5px;text-align:center;padding:12px}
+.sheet-wrap{overscroll-behavior:contain;touch-action:pan-y}
+.sheet{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 </style>
 </head>
 <body>
@@ -302,8 +304,11 @@ const firebaseConfig = {
 };
 const ADMIN_EMAIL = "atefwaer@gmail.com";   // إيميل الأدمن (عاطف)
 const LOGIN_DOMAIN = "bluecrm.app";         // السيلز بيدخلوا باسم دخول بسيط، والسيستم بيكمّله بالدومين ده
-const FIRST_CONTACT_HOURS = 24;             // عميل اتوزع ومحدش كلّمه خلال 24 ساعة = إنذار وتحويل
-const FOLLOW_DAYS = 3;                      // عميل اتكلم قبل كده ومحدش تابعه من 3 أيام ومفيش ميعاد متابعة = تنبيه
+// القيم دي بقت بتتغير من الإعدادات (الأدمن بس) — دي القيم الأساسية لو محدش غيرها
+const CFG_DEF = {firstContactHours:24, followDays:3, availRemindDays:7, maxPhotos:10, maxRecSec:180, sound:true};
+const daysTxt = n => n == 7 ? 'أسبوع' : n == 1 ? 'يوم' : n == 2 ? 'يومين' : n + ' أيام';
+const hoursTxt = n => n == 24 ? '24 ساعة' : n == 48 ? 'يومين' : n + ' ساعة';
+const cfg = k => { let v; try{ v = S.settings ? S.settings[k] : undefined; }catch(e){} return v === undefined || v === null || v === '' ? CFG_DEF[k] : v; };
 
 /* ---------------- ثوابت ---------------- */
 const STATUSES = {
@@ -313,23 +318,27 @@ const STATUSES = {
   noanswer:      {label:'ماردش',         color:'#7C3AED'},
   notinterested: {label:'مش مهتم',       color:'#DC2626'},
   wrong:         {label:'رقم غلط',       color:'#475569'},
-  closed:        {label:'اتقفلت (بيع)',   color:'#0F766E'}
+  viewing:       {label:'معاينة',         color:'#0891B2'},
+  closed:        {label:'اتقفلت بيع',     color:'#0F766E'},
+  closed_rent:   {label:'اتقفلت إيجار',   color:'#047857'}
 };
-const CALL_STATUSES = ['interested','followup','noanswer','notinterested','wrong','closed'];
-const OPEN = new Set(['new','interested','followup','noanswer']);
+const CALL_STATUSES = ['interested','followup','viewing','noanswer','notinterested','wrong','closed','closed_rent'];
+const isClosedSt = st => st === 'closed' || st === 'closed_rent';
+const OPEN = new Set(['new','interested','followup','viewing','noanswer']);
 const DAY = 864e5;
 const ROLE_LABEL = {admin:'الأدمن', manager:'مدير مبيعات', leader:'تيم ليدر', sales:'سيلز'};
 const ROLE_RANK = {admin:0, manager:1, leader:2, sales:3};
 const BOSS_ROLES = ['admin','manager'];
-const MAX_REC_SEC = 180;   // أقصى مدة للفويس: 3 دقايق
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 const SOURCES = {facebook:'فيسبوك', instagram:'إنستجرام', dubizzle:'دوبيزل', propertyfinder:'بروبرتي فايندر', aqarmap:'عقار ماب', sheet:'شيت داتا', referral:'ترشيح', walkin:'زيارة للمكتب', broker:'بروكر / شركة تانية', other:'تاني'};
 const brokerFields = (pre, l) => `<div id="${pre}BrW" class="row ${l && l.source === 'broker' ? '' : 'hidden'}">
   <div><label class="f">اسم البروكر / الشركة</label><input class="in" id="${pre}BrN" value="${esc((l && l.brokerName) || '')}"></div>
   <div><label class="f">رقم البروكر</label><input class="in" id="${pre}BrP" dir="ltr" inputmode="tel" value="${esc((l && l.brokerPhone) || '')}"></div></div>`;
 const brokerVal = (pre, src) => src === 'broker' ? {brokerName:($('#' + pre + 'BrN') || {}).value ? $('#' + pre + 'BrN').value.trim() : '', brokerPhone:($('#' + pre + 'BrP') || {}).value ? $('#' + pre + 'BrP').value.trim() : ''} : {brokerName:null, brokerPhone:null};
-const CLIENT_TYPES = {owner_rent:'مالك عايز يأجّر', owner_sale:'مالك عايز يبيع', tenant:'عايز يأجّر (مستأجر)', buyer:'عايز يشتري'};
-const FURNISH = {furnished:'مفروش', empty:'فاضي'};
+const CLIENT_TYPES = {owner_sale:'بائع', buyer:'مشتري', owner_rent:'مؤجّر', tenant:'مستأجر'};
+const FURNISH = {furnished:'مفروش', empty:'فاضي خالص', kitchen_ac:'مطبخ وتكييفات', kitchen_app_ac:'مطبخ بأجهزة وتكييفات', kitchen:'مطبخ بس', ac:'تكييفات بس'};
+const FURNISH_EN = {furnished:'Furnished', empty:'Unfurnished', kitchen_ac:'Kitchen & ACs', kitchen_app_ac:'Kitchen with appliances & ACs', kitchen:'Kitchen only', ac:'ACs only'};
+const isUnfurn = f => !!f && f !== 'furnished';
 const DEALS = {short:'إيجار قصير (أيام / شهور)', annual:'إيجار سنة أو أكتر', sale:'بيع'};
 
 /* ---------------- أدوات ---------------- */
@@ -374,13 +383,32 @@ const tgLink = p => 'https://t.me/+' + intlDigits(p);
 const isOverdue = l => !!l.nextFollowUp && l.nextFollowUp < Date.now() && OPEN.has(l.status);
 const isDueToday = l => !!l.nextFollowUp && l.nextFollowUp >= Date.now() && l.nextFollowUp < startOfDay() + DAY && OPEN.has(l.status);
 // اتوزع ومحدش كلّمه خلال 24 ساعة
-const isLateFirst = l => !!l.assignedTo && l.status === 'new' && !l.lastContactAt && Date.now() - (l.assignedAt || l.createdAt || 0) > FIRST_CONTACT_HOURS * 36e5;
+const isLateFirst = l => !!l.assignedTo && l.status === 'new' && !l.lastContactAt && Date.now() - (l.assignedAt || l.createdAt || 0) > cfg('firstContactHours') * 36e5;
 // اتكلم قبل كده ومحدش تابعه من فترة ومفيش ميعاد متابعة
 function isStale(l){
   if(!l.assignedTo || !OPEN.has(l.status) || isLateFirst(l)) return false;
   if(l.status === 'new' && !l.lastContactAt) return false;
   if(l.nextFollowUp && l.nextFollowUp > Date.now()) return false;
-  return Date.now() - (l.lastContactAt || l.assignedAt || l.createdAt) > FOLLOW_DAYS * DAY;
+  return Date.now() - (l.lastContactAt || l.assignedAt || l.createdAt) > cfg('followDays') * DAY;
+}
+/* ---------- صوت التنبيهات ---------- */
+var ACTX = null;
+function audioCtx(){ try{ ACTX = ACTX || new (window.AudioContext || window.webkitAudioContext)(); if(ACTX.state === 'suspended') ACTX.resume(); }catch(e){} return ACTX; }
+['touchstart', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, () => audioCtx(), {once:false, passive:true}));
+const BEEPS = {lead:[[880, .12], [0, .06], [1175, .18]], nudge:[[988, .14], [0, .07], [988, .14], [0, .07], [988, .22]], late:[[660, .2], [0, .08], [520, .3]], info:[[1046, .12]]};
+function beep(kind = 'info'){
+  try{
+    if(!cfg('sound')) return;
+    const c = audioCtx(); if(!c) return;
+    let t = c.currentTime + 0.02;
+    (BEEPS[kind] || BEEPS.info).forEach(([f, d]) => {
+      if(f){ const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+        o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + d + 0.02); }
+      t += d;
+    });
+    if(navigator.vibrate) navigator.vibrate(kind === 'nudge' ? [150, 80, 150, 80, 200] : [120, 60, 160]);
+  }catch(e){}
 }
 function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -494,6 +522,10 @@ function parseLeadText(t){
   const bud = budgets.filter(x => x >= 1000); if(bud.length) r.budget = Math.max(...bud);
   m = s.match(/(\d{2,4})\s*(?:متر|م2|م²|sqm|m2|meter)/); if(m) r.area = +m[1];
   if(/مفروش|furnished/.test(s) && !/(مش|غير|بدون|un)\s*مفروش|unfurnished/.test(s)) r.furn = 'furnished';
+  else if(/مطبخ.{0,12}اجهز.{0,25}تكييف|اجهز.{0,20}تكييف/.test(s)) r.furn = 'kitchen_app_ac';
+  else if(/مطبخ.{0,15}تكييف|تكييف.{0,15}مطبخ/.test(s)) r.furn = 'kitchen_ac';
+  else if(/مطبخ (بس|فقط)/.test(s)) r.furn = 'kitchen';
+  else if(/تكييفات (بس|فقط)|تكييف (بس|فقط)/.test(s)) r.furn = 'ac';
   else if(/فاضي|بدون فرش|unfurnished|مش مفروش|غير مفروش/.test(s)) r.furn = 'empty';
   const sc = projCanon(raw); let best = '';
   projectOptions().forEach(p => { const c = projCanon(p.name); if(c.length >= 4 && sc.includes(c) && c.length > projCanon(best).length) best = p.name; });
@@ -523,7 +555,9 @@ function unitFits(u, q, purpose){
   const b = parseInt(normNum(u.bedrooms)); if(q.beds && b && b < q.beds) return false;
   const pr = unitPrice(u, purpose); if(q.budget && pr && pr > q.budget * 1.1) return false;
   const a = unitArea(u); if(q.area && a && a < q.area * 0.9) return false;
-  if(purpose === 'rent' && q.furn && u.furnished && u.furnished !== q.furn) return false;
+  if(purpose === 'rent' && q.furn && u.furnished){
+    if(q.furn === 'furnished' ? u.furnished !== 'furnished' : q.furn === 'empty' ? !isUnfurn(u.furnished) : (u.furnished !== q.furn && !(u.furnished === 'kitchen_app_ac' && q.furn === 'kitchen_ac'))) return false;
+  }
   return true;
 }
 function matchUnits(l){
@@ -540,8 +574,9 @@ function requestsWithMatches(){
 }
 function requestsStrip(){
   const list = requestsWithMatches();
-  if(!list.length) return `<h3>📌 طلبات العملاء</h3><div class="card muted stripempty">مفيش طلبات ليها وحدات مناسبة دلوقتي — سجّل طلب العميل (مستأجر أو مشتري) والسيستم هيدوّرله على وحدات</div>`;
-  return `<h3>📌 طلبات العملاء — لقينالها وحدات مناسبة (${list.length})</h3>
+  const head = t => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>${t}</h3><button class="btn mini" style="background:#0F766E" onclick="App.newReq()">＋ طلب جديد</button></div>`;
+  if(!list.length) return head('📌 طلبات العملاء') + `<div class="card muted stripempty">مفيش طلبات ليها وحدات مناسبة دلوقتي — دوس "＋ طلب جديد" واكتب أو قول طلب العميل، والسيستم هيدوّرله على وحدات</div>`;
+  return head(`📌 طلبات العملاء — لقينالها وحدات (${list.length})`) + `
   <div class="strip">${list.slice(0, 15).map(({l, m}) => `<button class="scard req" onclick="App.open('${l.id}', 'match')">
     <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><b>${esc(l.name || 'عميل')}</b>${ctPill(l.clientType)}</div>
     <div class="muted" style="font-size:12px;min-height:34px">${esc(reqText(reqOf(l)))}</div>
@@ -598,11 +633,11 @@ function newLeadSheet(){
   const canAssign = isAdmin();
   const targets = activeSales();
   const me = S.me.uid;
-  const kind = S.tab === 'data' ? 'data' : 'lead';
-  return `<div class="sheet-h"><h2>${kind === 'data' ? 'عميل داتا جديد' : '🔥 ليد جديد'}</h2><button class="x" onclick="App.close()">×</button></div>
+  const kind = S.tab === 'data' ? 'data' : 'lead', rq = S._reqMode;
+  return `<div class="sheet-h"><h2>${rq ? '📌 طلب جديد' : kind === 'data' ? 'عميل داتا جديد' : '🔥 ليد جديد'}</h2><button class="x" onclick="App.close()">×</button></div>
   <div class="card quickin" style="margin-top:10px">
-    <b>⚡ تسجيل سريع</b>
-    <div class="muted" style="font-size:12.5px">قول بيانات العميل بصوتك، أو الصق رسالته / إيميل المنصة (دوبيزل، بروبرتي فايندر...) — والسيستم يملا الخانات لوحده وانت تراجع.</div>
+    <b>⚡ ${rq ? 'اكتب أو قول طلب العميل' : 'تسجيل سريع'}</b>
+    <div class="muted" style="font-size:12.5px">${rq ? 'مثلاً: "اسمه أحمد رقمه 010... عايز يأجر شقة 3 أوض في زايد ميزانيته 40 ألف" — والسيستم يملا الطلب ويطلعلك الوحدات المناسبة على طول. ' : ''}قول بيانات العميل بصوتك، أو الصق رسالته / إيميل المنصة (دوبيزل، بروبرتي فايندر...) — والسيستم يملا الخانات لوحده وانت تراجع.</div>
     <textarea class="in" id="nlRaw" style="min-height:70px;margin-top:8px" placeholder="مثلاً: اسمه محمد علي رقمه 01012345678 جاي من دوبيزل عايز يأجر شقة 3 أوض مفروشة في زايد ريزيدنس ميزانيته 40 ألف"></textarea>
     <div class="row" style="margin-top:8px">
       ${SpeechRec ? `<button type="button" class="btn ghost" id="nlMic" onclick="App.nlVoice()">🎤 اتكلم</button>` : ''}
@@ -643,7 +678,6 @@ function newLeadSheet(){
 
 /* ---------------- الوحدات ---------------- */
 const UNIT_CAP = 400;           // عدد الوحدات في كل صفحة تخزين
-const MAX_PHOTOS = 10;
 const LAYOUT_DOC = 'meta_layouts';   // اللي أوت بتاع كل مشروع (متخزن جنب صفحات الوحدات)
 const MAX_LAYOUTS = 3;
 const STAFF_DOC = 'meta_staff';     // اسم ورقم وصورة كل موظف — بيشوفها الكل عشان الإعلانات وزرار المعاينة
@@ -764,9 +798,8 @@ const PURPOSE_COLOR = {sale:'#0F766E', rent:'#1E5BB8', both:'#7C3AED'};
 const unitById = id => S.units.find(u => u.id === id);
 const canSeeOwner = u => isBoss() || u.agentId === S.me.uid || (isLeader() && u.teamId === S.me.uid);
 const canEditUnit = u => !u || canSeeOwner(u);
-const AVAIL_REMIND_DAYS = 7;   // التذكير بالوحدة المتأجرة قبل ما تفضى بأسبوع
 const soonDays = u => u.status === 'rented' && u.availableFrom ? Math.ceil((u.availableFrom - Date.now()) / DAY) : null;
-const isSoon = u => { const d = soonDays(u); return d !== null && d <= AVAIL_REMIND_DAYS; };
+const isSoon = u => { const d = soonDays(u); return d !== null && d <= cfg('availRemindDays'); };
 // وحدة متكررة مستنية موافقة المدير: تظهر بس لللي سجلها وفريقه والمديرين
 const canSeePending = u => !u.pendingDup || isBoss() || u.createdBy === S.me.uid || u.agentId === S.me.uid || (isLeader() && u.teamId === S.me.uid);
 const newUid = () => 'u' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -793,7 +826,7 @@ function filteredUnits(){
   return S.units.filter(u => {
     if(!canSeePending(u)) return false;
     if(f.purpose !== 'all' && !(u.purpose === f.purpose || (u.purpose === 'both' && f.purpose !== 'both'))) return false;
-    if(f.furn !== 'all' && u.furnished !== f.furn) return false;
+    if(f.furn !== 'all' && !(f.furn === 'empty' ? isUnfurn(u.furnished) : u.furnished === f.furn)) return false;
     if(f.st === 'available' && u.status && u.status !== 'available') return false;
     if(f.st === 'rented' && u.status !== 'rented') return false;
     if(f.st === 'soon' && !isSoon(u)) return false;
@@ -813,7 +846,7 @@ function unitStatusText(u){
   if(u.status === 'rented'){
     if(!u.availableFrom) return 'متأجرة';
     const d = soonDays(u);
-    return d < 0 ? `فضيت من ${-d} يوم — اتأكد منها` : d === 0 ? 'هتفضى النهارده' : d <= AVAIL_REMIND_DAYS ? `هتفضى بعد ${d} يوم` : `متأجرة لحد ${new Date(u.availableFrom).toLocaleDateString('ar-EG', {day:'numeric', month:'short', year:'numeric'})}`;
+    return d < 0 ? `فضيت من ${-d} يوم — اتأكد منها` : d === 0 ? 'هتفضى النهارده' : d <= cfg('availRemindDays') ? `هتفضى بعد ${d} يوم` : `متأجرة لحد ${new Date(u.availableFrom).toLocaleDateString('ar-EG', {day:'numeric', month:'short', year:'numeric'})}`;
   }
   return UNIT_STATUS[u.status] || 'متاحة';
 }
@@ -846,10 +879,10 @@ function unitsView(){
       <div class="row" style="flex:none;gap:6px"><button class="btn mini" onclick="App.unitForm()">＋ وحدة</button>
       ${isBoss() ? `<label class="btn ghost mini">رفع شيت<input type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="App.invFile(this.files[0])"></label>` : ''}</div></div>
     ${pend ? `<button class="alert" style="margin-bottom:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.uf('st', 'pending')"><b>${pend}</b><div>وحدة متكررة مستنية موافقة المدير</div></button>` : ''}
-    ${soon ? `<button class="alert" style="margin-bottom:10px" onclick="App.uf('st', 'soon')"><b>${soon}</b><div>وحدة متأجرة هتفضى خلال أسبوع أو فضيت — كلّم المالك</div></button>` : ''}
+    ${soon ? `<button class="alert" style="margin-bottom:10px" onclick="App.uf('st', 'soon')"><b>${soon}</b><div>وحدة متأجرة هتفضى خلال ${daysTxt(cfg('availRemindDays'))} أو فضيت — كلّم المالك</div></button>` : ''}
     <input class="search" id="uq" type="search" placeholder="دوّر بالعربي أو English: ذا أدرس، Palm Hills، شقة..." value="${esc(f.q)}" oninput="App.usearch(this.value)">
     <div class="chips">${chip('purpose', 'all', 'الكل')}${chip('purpose', 'sale', 'بيع')}${chip('purpose', 'rent', 'إيجار')}
-      ${chip('st', 'hot', '🔥 هوت ديل')}${chip('furn', 'furnished', 'مفروش')}${chip('furn', 'empty', 'فاضي')}
+      ${chip('st', 'hot', '🔥 هوت ديل')}${chip('furn', 'furnished', 'مفروش')}${chip('furn', 'empty', 'مش مفروش')}
       ${chip('st', 'available', 'متاحة')}${chip('st', 'rented', 'متأجرة')}${chip('st', 'soon', 'هتفضى قريب')}
       ${chip('mine', true, isBoss() ? 'كلها' : isLeader() ? 'بتاعة فريقي' : 'بتوعي')}</div>
     <div class="chips" style="padding-top:2px"><button class="chip ${S.ufOpen || extra ? 'on' : ''}" onclick="App.ufToggle()">⚙️ فلاتر أكتر${extra ? `<i>${extra}</i>` : ''}</button>
@@ -917,7 +950,7 @@ function parseLatLng(t){
   for(const re of pats){ const m = t.match(re); if(m){ const lat = +m[1], lng = +m[2]; if(Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return {lat:+lat.toFixed(6), lng:+lng.toFixed(6)}; } }
   return null;
 }
-let PICK = null;
+var PICK = null;
 function closeLocPicker(){ const el = document.getElementById('picker'); if(el) el.remove(); if(PICK && PICK.map){ try{ PICK.map.remove(); }catch(e){} } PICK = null; }
 async function openLocPicker(start, onSave){
   closeLocPicker();
@@ -1100,7 +1133,7 @@ function unitAdText(u, lang){
   const fin = [];
   const f = adFinish(u.finishing, ar); if(f && !(ar && f === 'مفروش' && u.furnished === 'furnished')) fin.push(f);
   if(u.furnished === 'furnished') fin.push(ar ? 'مفروش' : 'Furnished');
-  else if(u.furnished === 'empty' && (u.purpose === 'rent' || u.purpose === 'both')) fin.push(ar ? 'فاضي' : 'Unfurnished');
+  else if(isUnfurn(u.furnished) && (u.purpose === 'rent' || u.purpose === 'both')) fin.push(ar ? (u.furnished === 'empty' ? 'فاضي' : FURNISH[u.furnished]) : FURNISH_EN[u.furnished]);
   const del = String(u.delivery || '').trim();
   if(del) fin.push(/ready|فوري/i.test(del) ? (ar ? 'استلام فوري' : 'Ready to move') : (ar ? `استلام ${del}` : `Delivery ${del}`));
   if(fin.length) L.push('✨ ' + fin.join(' · '));
@@ -1159,7 +1192,7 @@ function unitSheet(u){
   ${unitHotBlock(u)}
 
   <div class="photos" id="photos">${photos.map(pid => `<button class="ph" id="ph-${esc(pid)}" onclick="App.viewPhoto('${esc(pid)}')"><span class="muted">...</span></button>`).join('')}
-    ${canEditUnit(u) && photos.length < MAX_PHOTOS ? `<label class="ph add">＋<small>صور</small><input type="file" accept="image/*" multiple class="hidden" onchange="App.addPhotos('${u.id}', this.files)"></label>` : ''}</div>
+    ${canEditUnit(u) && photos.length < cfg('maxPhotos') ? `<label class="ph add">＋<small>صور</small><input type="file" accept="image/*" multiple class="hidden" onchange="App.addPhotos('${u.id}', this.files)"></label>` : ''}</div>
   <div id="phStatus" class="muted" style="font-size:12.5px"></div>
   <div class="row" style="margin-top:10px">
     ${photos.length ? `<button class="btn ghost" onclick="App.sharePhotos('${u.id}')">شارك الصور للعميل</button>` : ''}
@@ -1220,7 +1253,7 @@ function unitFormSheet(u, owner, pre){
       <div><label class="f">حالة الوحدة</label><select class="sel" id="uSt" style="margin:0" onchange="$('#uAvW').classList.toggle('hidden', this.value !== 'rented')">${opts(UNIT_STATUS, st)}</select></div>
       <div id="uAvW" class="${st === 'rented' ? '' : 'hidden'}"><label class="f">هتفضى (متاحة من) يوم</label><input class="in" type="date" id="uAv" value="${u.availableFrom ? new Date(u.availableFrom - new Date(u.availableFrom).getTimezoneOffset() * 6e4).toISOString().slice(0, 10) : ''}"></div>
     </div>
-    <div class="muted" style="font-size:12px;margin-top:4px">لو الوحدة متأجرة وحددت يوم ما هتفضى، السيستم هيفكّر السيلز بتاعها ومديره قبلها بأسبوع، عشان تتعرض تاني على طول.</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">لو الوحدة متأجرة وحددت يوم ما هتفضى، السيستم هيفكّر السيلز بتاعها ومديره قبلها بـ${daysTxt(cfg('availRemindDays'))}، عشان تتعرض تاني على طول.</div>
     <label class="f">ملاحظات</label><textarea class="in" id="uNotes" style="min-height:60px">${v('notes')}</textarea>
     <label class="f">📍 اللوكيشن</label>
     <input type="hidden" id="uLoc" value="${esc(u.loc ? JSON.stringify(u.loc) : '')}">
@@ -1822,15 +1855,17 @@ function onAuth(me){
     if(S.leadsLoaded && isAdmin()){
       const old = {}; S.leads.forEach(l => old[l.id] = l.nudge && l.nudge.at);
       const nn = list.filter(l => l.nudge && l.nudge.by !== S.me.uid && old[l.id] !== l.nudge.at && l.assignedTo !== S.me.uid);
-      if(nn.length) toast(`⚠️ ${nn[0].nudge.byName} نبّه ${userName(nn[0].assignedTo)} على ${nn[0].name || 'عميل'}`);
+      if(nn.length){ toast(`⚠️ ${nn[0].nudge.byName} نبّه ${userName(nn[0].assignedTo)} على ${nn[0].name || 'عميل'}`); beep('nudge'); }
+      const known = new Set(S.leads.map(l => l.id)), fl = list.filter(l => !known.has(l.id) && l.createdBy !== S.me.uid);
+      if(fl.length){ toast(`🔥 وصل ${fl.length} عميل جديد`); beep('lead'); }
     }
     if(S.leadsLoaded && S.me.role === 'sales'){
       const known = new Set(S.leads.map(l => l.id));
       const fresh = list.filter(l => !known.has(l.id)).length;
-      if(fresh) toast(`وصلك ${fresh} عميل جديد`);
+      if(fresh){ toast(`وصلك ${fresh} عميل جديد`); beep('lead'); }
       const old = {}; S.leads.forEach(l => old[l.id] = l.nudge && l.nudge.at);
       const nn = list.filter(l => l.nudge && l.assignedTo === S.me.uid && old[l.id] !== l.nudge.at);
-      if(nn.length) toast(`⚠️ ${nn[0].nudge.byName} نبّهك: ${nn[0].nudge.msg}`);
+      if(nn.length){ toast(`⚠️ ${nn[0].nudge.byName} نبّهك: ${nn[0].nudge.msg}`); beep('nudge'); }
     }
     S.leads = list; S.leadsLoaded = true; vwResume(); render();
   }));
@@ -1849,7 +1884,7 @@ function render(){
   app.innerHTML = headerView() + viewingBanner() + `<main>${mainView()}</main>` + navView();
   if(isBoss() && S.tab === 'team') setTimeout(() => App.syncStaff(), 300);
   if(q){ const el = $('#q'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
-  window.scrollTo(0, keepScroll);
+  if(SHEET_Y == null) window.scrollTo(0, keepScroll);
 }
 
 function headerView(){
@@ -2014,7 +2049,8 @@ document.addEventListener('visibilitychange', () => { if(document.visibilityStat
 /* ---------------- الإعدادات (الأدمن بس): ميعاد التقرير + الثيم ---------------- */
 const SETTINGS_DOC = 'meta_settings';
 const THEME_PRESETS = {light:{name:'أبيض فاتح', bg:'#FFFFFF', card:'#F8FAFC', ink:'#0F172A'}, sky:{name:'أزرق فاتح', bg:'#E8F0FB', card:'#FFFFFF', ink:'#0B2A5B'},
-  sand:{name:'بيج هادي', bg:'#F5F0E6', card:'#FFFDF8', ink:'#3B2F1E'}, dark:{name:'ليلي غامق', bg:'#0F172A', card:'#1E293B', ink:'#E2E8F0'}};
+  sand:{name:'بيج هادي', bg:'#F5F0E6', card:'#FFFDF8', ink:'#3B2F1E'}, dark:{name:'ليلي غامق', bg:'#0F172A', card:'#1E293B', ink:'#E2E8F0'},
+  black:{name:'أسود', bg:'#000000', card:'#141414', ink:'#FFFFFF', head:'#000000'}};
 function applyTheme(t){
   let el = document.getElementById('themeCss');
   try{ localStorage.setItem('blue_theme', JSON.stringify(t || null)); }catch(e){}
@@ -2028,9 +2064,11 @@ function applyTheme(t){
     h3{color:color-mix(in srgb, ${ink} 70%, #3B82F6)} .btn.ghost{background:color-mix(in srgb, ${ink} 10%, ${card});color:${ink}} .seg{background:color-mix(in srgb, ${ink} 12%, ${card})}
     .lead.fresh{background:color-mix(in srgb, #EA580C 14%, ${card})} .lead.unit.hot,.scard.hot,.hotcard{background:color-mix(in srgb, #F97316 14%, ${card})}
     .nudge,.reprow.miss,.repcard.late{background:color-mix(in srgb, #DC2626 14%, ${card});color:${ink}} .reprow.lateb,.repcard.due{background:color-mix(in srgb, #F59E0B 14%, ${card});color:${ink}}
-    .repcard.ok{background:color-mix(in srgb, #16A34A 14%, ${card});color:${ink}} .quickin{background:${card}} .datahero{background:${card}} #toast{background:#0F172A;color:#fff}`;
+    .repcard.ok{background:color-mix(in srgb, #16A34A 14%, ${card});color:${ink}}
+    ${ok(t.head) ? `.top{background:${t.head};border-bottom:1px solid #262626} .nav{background:${t.head};border-top-color:#262626} .nav button.on{background:#262626;color:#fff} .chip.on,.btn:not(.ghost):not(.danger):not(.green):not(.wa):not(.viber):not(.tg):not(.imo):not(.nudgebtn){background:#2A2A2A} .seg button.on.data{background:#2A2A2A} .phone,.price{color:#93C5FD} .btn.nudgebtn{background:#3B0D0D;color:#FCA5A5}` : ''} .quickin{background:${card}} .datahero{background:${card}} #toast{background:#0F172A;color:#fff}`;
 }
 try{ const t = JSON.parse(localStorage.getItem('blue_theme') || 'null'); if(t) applyTheme(t); }catch(e){}
+const numRow = (id, label, val, min, max) => `<div class="colrow"><label>${label}</label><input class="in" id="${id}" type="number" inputmode="numeric" min="${min}" max="${max}" value="${val}" style="width:80px;text-align:center"></div>`;
 function settingsSheet(){
   const st = S.settings || {}, t = S._thDraft || st.theme || {mode:'standard'}, h = reportHour();
   const custom = t.mode === 'custom', c = k => t[k] || (k === 'bg' ? '#F2F4F8' : k === 'card' ? '#FFFFFF' : '#0F172A');
@@ -2040,6 +2078,22 @@ function settingsSheet(){
     <div class="card"><label class="f" style="margin-top:0">لازم السيلز يبعت تقريره قبل الساعة</label>
       <select class="sel" id="setHour" style="margin:0">${Array.from({length:12}, (_, i) => i + 12).concat([9, 10, 11]).map(x => `<option value="${x}" ${x === h ? 'selected' : ''}>${hourLabel(x)}</option>`).join('')}</select>
       <div class="muted" style="font-size:12px;margin-top:6px">اللي يبعت بعد الميعاد ده أو مايبعتش، بيظهر عند المدير بالأحمر.</div></div>
+    <h3>⏱️ مواعيد المتابعة والتنبيهات</h3>
+    <div class="card">
+      ${numRow('setFc', 'إنذار لو محدش كلّم العميل الجديد خلال (ساعة)', cfg('firstContactHours'), 1, 240)}
+      ${numRow('setFd', 'تنبيه لو العميل محدش تابعه من (يوم)', cfg('followDays'), 1, 60)}
+      ${numRow('setAv', 'تذكير الوحدة المتأجرة قبل ما تفضى بـ (يوم)', cfg('availRemindDays'), 1, 60)}
+    </div>
+    <h3>🏠 الوحدات والفويس</h3>
+    <div class="card">
+      ${numRow('setMp', 'أقصى عدد صور للوحدة', cfg('maxPhotos'), 1, 30)}
+      ${numRow('setRec', 'أقصى مدة للفويس (دقيقة)', Math.round(cfg('maxRecSec') / 60), 1, 10)}
+    </div>
+    <h3>🔔 صوت التنبيهات</h3>
+    <div class="card"><div class="colrow" style="border:0"><label>صوت مع كل تنبيه (ليد جديد، تنبيه من المدير، تأخير...)</label>
+      <label class="switch"><input type="checkbox" id="setSnd" ${cfg('sound') ? 'checked' : ''}><span></span></label></div>
+      <button type="button" class="btn ghost mini" onclick="beep('nudge')">🔊 جرّب الصوت</button>
+      <div class="muted" style="font-size:12px;margin-top:6px">الصوت بيشتغل والأبليكيشن مفتوح، والموبايل مش على الصامت.</div></div>
     <h3>🎨 شكل الأبليكيشن</h3>
     <div class="card">
       <div class="seg"><button class="${!custom ? 'on data' : ''}" onclick="App.thMode('standard')">الستاندر</button><button class="${custom ? 'on data' : ''}" onclick="App.thMode('custom')">ثيم مخصص</button></div>
@@ -2091,7 +2145,7 @@ function dayStats(uid, day = dayKey()){
   let calls = 0, hot = 0, closed = 0, fresh = 0, views = 0;
   S.leads.forEach(l => {
     const hs = (l.history || []).filter(h => h.at >= t0 && h.at < t1 && ids.includes(h.by) && h.status !== 'assign');
-    calls += hs.length; if(hs.some(h => h.status === 'interested')) hot++; if(hs.some(h => h.status === 'closed')) closed++;
+    calls += hs.length; if(hs.some(h => h.status === 'interested')) hot++; if(hs.some(h => isClosedSt(h.status))) closed++;
     if(hs.length && !(l.history || []).some(h => h.at < t0 && h.status !== 'assign')) fresh++;
     if(l.viewing && ids.includes(l.viewing.by) && l.viewing.start >= t0 && l.viewing.start < t1) views++;
   });
@@ -2142,7 +2196,7 @@ function adminHomeBase(){
   const stale = L.filter(isStale).length;
   const late24 = L.filter(isLateFirst).length;
   const soonUnits = S.units.filter(u => isSoon(u) && myUnitsScope(u)).length;
-  const bySrc = {}; L.forEach(l => { const k = l.source && SOURCES[l.source] ? l.source : '_'; const r = bySrc[k] = bySrc[k] || {n:0, hot:0, won:0}; r.n++; if(l.status === 'interested') r.hot++; if(l.status === 'closed') r.won++; });
+  const bySrc = {}; L.forEach(l => { const k = l.source && SOURCES[l.source] ? l.source : '_'; const r = bySrc[k] = bySrc[k] || {n:0, hot:0, won:0}; r.n++; if(l.status === 'interested') r.hot++; if(isClosedSt(l.status)) r.won++; });
   const agreed = L.filter(l => l.commissionAgreed);
   const agreedSum = agreed.reduce((a, l) => a + (+l.commission || 0), 0);
   const calls = callsByToday();
@@ -2173,9 +2227,9 @@ function adminHomeBase(){
       <button class="kpi ok" onclick="App.quick('today')"><b>${today}</b><span>اتكلموا النهارده</span></button>
       <button class="kpi late" onclick="App.quick('overdue')"><b>${overdue}</b><span>متابعات متأخرة</span></button>
     </div>
-    ${late24 ? `<button class="alert" style="margin-top:12px" onclick="App.quick('late24')"><b>${late24}</b><div>⚠️ عميل اتوزع من أكتر من ${FIRST_CONTACT_HOURS} ساعة ومحدش كلّمه — دوس وحوّلهم لسيلز تاني</div></button>` : ''}
-    ${stale ? `<button class="alert" style="margin-top:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.quick('stale')"><b>${stale}</b><div>عميل محدش تابعه من أكتر من ${FOLLOW_DAYS} أيام ومفيش ميعاد متابعة</div></button>` : ''}
-    ${soonUnits ? `<button class="alert" style="margin-top:10px;background:#EFF6FF;border-color:#BFDBFE;color:#1E3A8A" onclick="App.unitsSoon()"><b>${soonUnits}</b><div>وحدة متأجرة هتفضى خلال أسبوع أو فضيت — كلّموا الملاك واعرضوها</div></button>` : ''}
+    ${late24 ? `<button class="alert" style="margin-top:12px" onclick="App.quick('late24')"><b>${late24}</b><div>⚠️ عميل اتوزع من أكتر من ${cfg('firstContactHours')} ساعة ومحدش كلّمه — دوس وحوّلهم لسيلز تاني</div></button>` : ''}
+    ${stale ? `<button class="alert" style="margin-top:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.quick('stale')"><b>${stale}</b><div>عميل محدش تابعه من أكتر من ${cfg('followDays')} أيام ومفيش ميعاد متابعة</div></button>` : ''}
+    ${soonUnits ? `<button class="alert" style="margin-top:10px;background:#EFF6FF;border-color:#BFDBFE;color:#1E3A8A" onclick="App.unitsSoon()"><b>${soonUnits}</b><div>وحدة متأجرة هتفضى خلال ${daysTxt(cfg('availRemindDays'))} أو فضيت — كلّموا الملاك واعرضوها</div></button>` : ''}
     ${unassigned ? `<button class="alert" style="margin-top:10px;background:#EFF6FF;border-color:#BFDBFE;color:#1E3A8A" onclick="App.quick('unassigned')"><b>${unassigned}</b><div>عميل لسه مش متوزع على حد — دوس توزّعهم</div></button>` : ''}
     ${teamReportsCard()}
     <h3>${isLeader() ? 'فريقك النهارده' : 'الفريق النهارده'}</h3>
@@ -2235,6 +2289,7 @@ function byPriority(a, b){
 function leadItem(l){
   const st = STATUSES[l.status] || STATUSES.new;
   const due = l.nextFollowUp && OPEN.has(l.status) ? dueLabel(l.nextFollowUp) : null;
+  if(due && l.status === 'viewing') due.txt = '🚶 ' + due.txt.replace('متابعة', 'معاينة');
   const sub = [l.project, l.unit && ('وحدة ' + l.unit)].filter(Boolean).join(' · ');
   const hotNew = isLeadK(l) && l.status === 'new' && !l.lastContactAt;
   return `<button class="lead ${isLeadK(l) ? 'is-lead' : 'is-data'}${hotNew || l.nudge ? ' fresh' : ''}" onclick="App.open('${l.id}')">
@@ -2243,7 +2298,7 @@ function leadItem(l){
     <div class="lead-top"><b>${esc(l.name || 'بدون اسم')} ${ctPill(l.clientType)}</b><span class="pill" style="--c:${st.color}">${st.label}</span></div>
     <div class="lead-sub">${esc(sub || l.phone)}</div>
     <div class="lead-meta">${isAdmin() ? `<span>${l.assignedTo ? 'مع ' + esc(userName(l.assignedTo)) : '<b style="color:var(--accent)">مش متوزع</b>'}</span>` : ''}
-      <span>آخر تواصل: ${ago(l.lastContactAt)}</span>${due ? `<span class="due ${due.cls}">${due.txt}</span>` : ''}${isLateFirst(l) ? `<span class="due late">⚠️ عدّى 24 ساعة من غير تواصل</span>` : ''}</div>
+      <span>آخر تواصل: ${ago(l.lastContactAt)}</span>${due ? `<span class="due ${due.cls}">${due.txt}</span>` : ''}${isLateFirst(l) ? `<span class="due late">⚠️ عدّى ${hoursTxt(cfg('firstContactHours'))} من غير تواصل</span>` : ''}</div>
     ${leadTags(l)}
   </button>`;
 }
@@ -2278,7 +2333,7 @@ function leadsView(){
     ${kind !== 'data' ? `<select class="sel" onchange="App.src(this.value)"><option value="all">كل المصادر</option>${opts(Object.fromEntries(Object.entries(SOURCES).filter(([k]) => kind === 'all' || k !== 'sheet')), S.f.src)}<option value="_" ${S.f.src === '_' ? 'selected' : ''}>مش متحدد</option></select>` : ''}
     <div class="chips">${ctChip('', 'كل الأنواع')}${Object.entries(CT_SHORT).map(([k, v]) => ctChip(k, v)).join('')}</div>
     <div class="chips" style="padding-top:2px">${chip('all', 'الكل', pool.length)}${Object.entries(STATUSES).map(([k, v]) => chip(k, v.label, counts[k] || 0)).join('')}</div>
-    ${S.f.special ? `<div class="chips"><button class="chip on" onclick="App.quick('', true)">${SPECIALS[S.f.special]} ✕</button></div>` : ''}
+    ${S.f.special ? `<div class="chips"><button class="chip on" onclick="App.quick('', true)">${S.f.special === 'late24' ? 'محدش كلّمهم خلال ' + hoursTxt(cfg('firstContactHours')) : SPECIALS[S.f.special]} ✕</button></div>` : ''}
     ${['unassigned', 'late24', 'stale'].includes(S.f.special) && isAdmin() && filteredLeads().length ? distributeUnassignedView() : ''}
     <div id="list">${listHTML()}</div>`;
 }
@@ -2315,7 +2370,7 @@ function todayView(){
     ${hotStrip()}
     ${requestsStrip()}
     ${freshLeads.length ? `<div class="leadhero" style="margin-top:14px"><div style="flex:1"><b>🔥 ليدز جديدة — كلّمهم الأول (${freshLeads.length})</b><div style="font-size:12.5px;opacity:.9">دول اتصلوا على إعلان، كل دقيقة بتفرق</div></div></div>` + freshLeads.slice(0, 30).map(leadItem).join('') : ''}
-    ${late.length ? `<h3 style="color:var(--late)">⚠️ عدّى عليهم 24 ساعة من غير تواصل (${late.length})</h3><div class="muted" style="font-size:12.5px">كلّمهم دلوقتي، لإن المدير ممكن يحوّلهم لحد تاني</div>` + late.map(leadItem).join('') : ''}
+    ${late.length ? `<h3 style="color:var(--late)">⚠️ عدّى عليهم ${hoursTxt(cfg('firstContactHours'))} من غير تواصل (${late.length})</h3><div class="muted" style="font-size:12.5px">كلّمهم دلوقتي، لإن المدير ممكن يحوّلهم لحد تاني</div>` + late.map(leadItem).join('') : ''}
     ${soonU.length ? `<h3>🏠 وحدات هتفضى قريب — كلّم المالك (${soonU.length})</h3>` + soonU.map(unitItem).join('') : ''}
     ${sec('متابعات متأخرة', over, 'مفيش متابعات متأخرة 👌')}
     ${sec('متابعات النهارده', due, 'مفيش متابعات تانية النهارده')}
@@ -2347,8 +2402,13 @@ function recCleanup(){
 const blobToB64 = blob => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1] || ''); fr.onerror = rej; fr.readAsDataURL(blob); });
 function b64ToBlob(b64, mime){ const bin = atob(b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Blob([u], {type:mime || 'audio/webm'}); }
 
-function openSheet(html){ const s = $('#sheet'); s.innerHTML = `<div class="sheet" onclick="event.stopPropagation()"><div class="grab"></div>${html}</div>`; s.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeSheet(){ recCleanup(); const s = $('#sheet'); s.classList.add('hidden'); s.innerHTML = ''; document.body.style.overflow = ''; S.openId = null; S.openUnitId = null; }
+// لما صفحة (وحدة / عميل) تتفتح فوق: الصفحة اللي ورا بتتثبت تمامًا، والسكرول يشتغل على الصفحة المفتوحة بس
+var SHEET_Y = null;
+function lockBody(){ if(SHEET_Y != null) return; SHEET_Y = window.scrollY; const b = document.body.style; b.position = 'fixed'; b.top = -SHEET_Y + 'px'; b.left = '0'; b.right = '0'; b.width = '100%'; b.overflow = 'hidden'; }
+function unlockBody(){ if(SHEET_Y == null) return; const y = SHEET_Y; SHEET_Y = null; const b = document.body.style; b.position = ''; b.top = ''; b.left = ''; b.right = ''; b.width = ''; b.overflow = ''; window.scrollTo(0, y); }
+function openSheet(html){ const s = $('#sheet'); const keep = s.classList.contains('hidden') ? 0 : (s.firstElementChild ? s.firstElementChild.scrollTop : 0);
+  s.innerHTML = `<div class="sheet" onclick="event.stopPropagation()"><div class="grab"></div>${html}</div>`; s.classList.remove('hidden'); lockBody(); if(keep && S._keepSheetScroll) s.firstElementChild.scrollTop = keep; S._keepSheetScroll = false; }
+function closeSheet(){ recCleanup(); const s = $('#sheet'); s.classList.add('hidden'); s.innerHTML = ''; unlockBody(); S.openId = null; S.openUnitId = null; }
 $('#sheet').addEventListener('click', closeSheet);
 
 function leadSheet(l){
@@ -2371,7 +2431,7 @@ function leadSheet(l){
     <div><span>آخر تواصل</span>${ago(l.lastContactAt)}</div>
     ${l.source ? `<div><span>المصدر</span>${esc(SOURCES[l.source] || l.source)}</div>` : ''}
     ${l.source === 'broker' && (l.brokerName || l.brokerPhone) ? `<div><span>البروكر</span>${esc(l.brokerName || '')}${l.brokerPhone ? ` · <a href="tel:${esc(l.brokerPhone)}" dir="ltr" style="color:var(--navy)">${esc(l.brokerPhone)}</a>` : ''}</div>` : ''}
-    ${l.nextFollowUp && OPEN.has(l.status) ? `<div><span>المتابعة الجاية</span><b class="due ${dueLabel(l.nextFollowUp).cls}">${fmt(l.nextFollowUp)}</b></div>` : ''}
+    ${l.nextFollowUp && OPEN.has(l.status) ? `<div><span>${l.status === 'viewing' ? 'ميعاد المعاينة' : 'المتابعة الجاية'}</span><b class="due ${dueLabel(l.nextFollowUp).cls}">${fmt(l.nextFollowUp)}</b></div>` : ''}
     <div><span>عدد المكالمات</span>${l.callCount || 0}</div>
     ${extra.map(([k, v]) => `<div><span>${esc(k)}</span>${esc(v)}</div>`).join('')}
   </div>
@@ -2412,7 +2472,7 @@ function leadSheet(l){
       ${SpeechRec ? `<button type="button" class="btn ghost mini" id="dicBtn" onclick="App.dictate()">اتكلم ويتكتب لوحده</button>` : ''}
     </div>
     <div id="fuBox">
-      <label class="f">ميعاد المتابعة الجاية <span class="muted" id="fuReq">(اختياري)</span></label>
+      <label class="f"><span id="fuLbl">ميعاد المتابعة الجاية</span> <span class="muted" id="fuReq">(اختياري)</span></label>
       <div class="quick">
         <button type="button" onclick="App.fu(3)">بعد 3 ساعات</button>
         <button type="button" onclick="App.fu('tom')">بكرة</button>
@@ -2712,7 +2772,7 @@ const App = window.App = {
     };
     rec.timer = setInterval(() => {
       const sec = Math.round((Date.now() - rec.start) / 1000), t = $('#recTime'); if(t) t.textContent = mmss(sec);
-      if(sec >= MAX_REC_SEC){ toast('وصلت لأقصى مدة (3 دقايق)'); App.recStop(); }
+      if(sec >= cfg('maxRecSec')){ toast(`وصلت لأقصى مدة (${Math.round(cfg('maxRecSec') / 60)} دقايق)`); App.recStop(); }
     }, 500);
     S.rec = rec; mr.start(1000); renderRec();
   },
@@ -2741,7 +2801,8 @@ const App = window.App = {
   stChange(){
     const v = (document.querySelector('input[name=st]:checked') || {}).value;
     const box = $('#fuBox'); box.classList.toggle('hidden', !OPEN.has(v));
-    $('#fuReq').textContent = v === 'followup' ? '(لازم)' : '(اختياري)';
+    $('#fuReq').textContent = v === 'followup' || v === 'viewing' ? '(لازم)' : '(اختياري)';
+    $('#fuLbl').textContent = v === 'viewing' ? 'ميعاد المعاينة' : 'ميعاد المتابعة الجاية';
     if(v === 'noanswer' && !$('#fuIn').value) App.fu(3);
     if(v === 'followup' && !$('#fuIn').value) App.fu('tom');
   },
@@ -2758,6 +2819,7 @@ const App = window.App = {
     let fu = $('#fuIn').value ? new Date($('#fuIn').value).getTime() : null;
     if(!status) return toast('اختار نتيجة المكالمة الأول');
     if(status === 'followup' && !fu) return toast('حدد ميعاد المتابعة');
+    if(status === 'viewing' && !fu) return toast('حدد ميعاد المعاينة');
     if(!OPEN.has(status)) fu = null;
     if(S.rec && S.rec.recording) return toast('وقّف تسجيل الفويس الأول');
     const b = $('#saveBtn'); b.disabled = true; b.textContent = 'بيحفظ...';
@@ -2953,7 +3015,8 @@ Object.assign(App, {
       toast('اتحفظت العمولة ✓');
     }catch(e){ toast(fbError(e)); }
   },
-  newLead(){ recCleanup(); openSheet(newLeadSheet()); },
+  newLead(){ recCleanup(); S._reqMode = false; openSheet(newLeadSheet()); },
+  newReq(){ recCleanup(); S._reqMode = true; openSheet(newLeadSheet()); const ct = $('#nlCt'); if(ct){ ct.value = 'tenant'; App.nlCt(); } setTimeout(() => { const r = $('#nlRaw'); if(r) r.focus(); }, 80); },
   nlCt(){
     const v = $('#nlCt').value;
     $('#nlFurnW').classList.toggle('hidden', !['owner_rent', 'tenant'].includes(v));
@@ -3002,7 +3065,9 @@ Object.assign(App, {
     try{
       await store.addLeads([lead]);
       await store.addActivity({type:'upload', at:now, by:S.me.uid, byName:S.me.name, note:`ضاف عميل جديد: ${lead.name}${to && to !== S.me.uid ? ' — لـ ' + userName(to) : ''}`, teamId:teamOf(to) || myTeam()});
-      closeSheet(); toast('اتضاف العميل ✓');
+      const wasReq = S._reqMode; S._reqMode = false;
+      closeSheet(); toast(wasReq ? 'اتسجل الطلب ✓ — بيدوّر على وحدات...' : 'اتضاف العميل ✓');
+      if(wasReq || hasRq) setTimeout(() => { const nl = S.leads.find(x => x.phone === phone); if(nl) App.open(nl.id, 'match'); }, 700);
     }catch(err){ toast(fbError(err)); b.disabled = false; b.textContent = 'إضافة العميل'; }
   },
 
@@ -3092,9 +3157,9 @@ Object.assign(App, {
   },
   async addPhotos(id, files){
     const u = unitById(id); if(!u || !files || !files.length) return;
-    const room = MAX_PHOTOS - (u.photos || []).length;
+    const room = cfg('maxPhotos') - (u.photos || []).length;
     const list = Array.from(files).slice(0, Math.max(0, room));
-    if(files.length > room) toast(`أقصى عدد ${MAX_PHOTOS} صور للوحدة — هيترفع ${list.length} بس`);
+    if(files.length > room) toast(`أقصى عدد ${cfg('maxPhotos')} صور للوحدة — هيترفع ${list.length} بس`);
     const stEl = () => $('#phStatus');
     let done = 0;
     const hashes = [...(u.phHash || [])];
@@ -3270,18 +3335,23 @@ Object.assign(App, {
   /* الإعدادات */
   settings(){ if(!isOwner()) return; S._thDraft = null; openSheet(settingsSheet()); },
   setClose(){ S._thDraft = null; applyTheme((S.settings || {}).theme); closeSheet(); },
-  thRead(){ const g = id => ($(id) ? $(id).value : ''); return {mode:'custom', bg:g('#thBg'), card:g('#thCard'), ink:g('#thInk')}; },
+  thRead(){ const g = id => ($(id) ? $(id).value : ''); const head = (S._thDraft || (S.settings || {}).theme || {}).head; return {mode:'custom', bg:g('#thBg'), card:g('#thCard'), ink:g('#thInk'), ...(head ? {head} : {})}; },
+  setKeep(){ const ids = ['#setHour', '#setFc', '#setFd', '#setAv', '#setMp', '#setRec']; const v = {}; ids.forEach(i => { if($(i)) v[i] = $(i).value; }); v.snd = $('#setSnd') ? $('#setSnd').checked : null; return () => { ids.forEach(i => { if($(i) && v[i] != null) $(i).value = v[i]; }); if($('#setSnd') && v.snd !== null) $('#setSnd').checked = v.snd; }; },
   thMode(m){ S._thDraft = m === 'custom' ? {...THEME_PRESETS.sky, ...(((S.settings || {}).theme || {}).mode === 'custom' ? S.settings.theme : {}), mode:'custom'} : {mode:'standard'};
-    const h = $('#setHour') && $('#setHour').value; applyTheme(S._thDraft); openSheet(settingsSheet()); if(h) $('#setHour').value = h; },
-  thPreset(k){ const p = THEME_PRESETS[k]; S._thDraft = {mode:'custom', bg:p.bg, card:p.card, ink:p.ink}; const h = $('#setHour').value; applyTheme(S._thDraft); openSheet(settingsSheet()); $('#setHour').value = h; },
+    const back = App.setKeep(); applyTheme(S._thDraft); openSheet(settingsSheet()); back(); },
+  thPreset(k){ const p = THEME_PRESETS[k]; S._thDraft = {mode:'custom', bg:p.bg, card:p.card, ink:p.ink, ...(p.head ? {head:p.head} : {})}; const back = App.setKeep(); applyTheme(S._thDraft); openSheet(settingsSheet()); back(); },
   thLive(){ S._thDraft = App.thRead(); applyTheme(S._thDraft); },
-  thReset(){ S._thDraft = {mode:'standard'}; const h = $('#setHour').value; applyTheme(S._thDraft); openSheet(settingsSheet()); $('#setHour').value = h; },
+  thReset(){ S._thDraft = {mode:'standard'}; const back = App.setKeep(); applyTheme(S._thDraft); openSheet(settingsSheet()); back(); },
   async setSave(){
     if(!isOwner()) return;
     const theme = S._thDraft || (S.settings || {}).theme || {mode:'standard'};
     const b = $('#setBtn'); b.disabled = true; b.textContent = 'بيحفظ...';
     try{
-      await store.setMeta(SETTINGS_DOC, {reportHour:+$('#setHour').value, theme:theme.mode === 'custom' ? {mode:'custom', bg:theme.bg, card:theme.card, ink:theme.ink} : {mode:'standard'}});
+      const num = (id, min, max, def) => { const v = parseInt($(id) && $(id).value); return v >= min && v <= max ? v : def; };
+      await store.setMeta(SETTINGS_DOC, {reportHour:+$('#setHour').value,
+        firstContactHours:num('#setFc', 1, 240, CFG_DEF.firstContactHours), followDays:num('#setFd', 1, 60, CFG_DEF.followDays),
+        availRemindDays:num('#setAv', 1, 60, CFG_DEF.availRemindDays), maxPhotos:num('#setMp', 1, 30, CFG_DEF.maxPhotos),
+        maxRecSec:num('#setRec', 1, 10, 3) * 60, sound:$('#setSnd').checked, theme:theme.mode === 'custom' ? {mode:'custom', bg:theme.bg, card:theme.card, ink:theme.ink, head:theme.head || null} : {mode:'standard'}});
       S._thDraft = null; closeSheet(); toast('اتحفظت الإعدادات ✓ — هتتطبق عند الفريق كله'); render();
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'حفظ الإعدادات'; }
   },
@@ -3665,7 +3735,22 @@ Object.assign(App, {
 });
 
 // تحديث "من كام دقيقة" والمتأخرين كل دقيقة
-setInterval(() => { if(S.me && !document.activeElement.matches('input,textarea,select')) render(); }, 60000);
+setInterval(() => { if(S.me && !document.activeElement.matches('input,textarea,select') && $('#sheet').classList.contains('hidden')) render(); }, 60000);
+// صوت لما يظهر تأخير جديد (عميل عدّى عليه وقت الإنذار، أو ميعاد التقرير عدّى، أو وحدة متكررة مستنية موافقة)
+var ALERT_PREV = null;
+setInterval(() => {
+  if(!S.me || !S.leadsLoaded) return;
+  const mine = l => isAdmin() || l.assignedTo === S.me.uid;
+  const now = {late:S.leads.filter(l => mine(l) && isLateFirst(l)).length, rep:reportLate() ? 1 : 0,
+    pend:isBoss() ? S.units.filter(u => u.pendingDup).length : 0, soon:S.units.filter(u => isSoon(u) && (isAdmin() ? myUnitsScope(u) : u.agentId === S.me.uid)).length};
+  if(ALERT_PREV && S.me.uid === ALERT_PREV.uid){
+    if(now.late > ALERT_PREV.late){ toast(`⚠️ عميل عدّى عليه ${hoursTxt(cfg('firstContactHours'))} من غير تواصل`); beep('late'); }
+    else if(now.rep > ALERT_PREV.rep){ toast(`📝 عدّى ميعاد التقرير (${RH()}) — ابعته دلوقتي`); beep('late'); }
+    else if(now.pend > ALERT_PREV.pend){ toast('⏳ وحدة متكررة جديدة مستنية موافقتك'); beep('info'); }
+    else if(now.soon > ALERT_PREV.soon){ toast('🏠 وحدة متأجرة قرب ميعاد فضيانها'); beep('info'); }
+  }
+  ALERT_PREV = {...now, uid:S.me.uid};
+}, 30000);
 </script>
 </body>
 </html>
