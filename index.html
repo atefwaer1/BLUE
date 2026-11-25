@@ -90,6 +90,14 @@ select.sel{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(
 .lead-top b{font-size:15.5px}
 .lead-sub{color:var(--muted);font-size:13px;margin-top:2px}
 .lead-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);margin-top:6px}
+.lead-upd{font-size:11.5px;color:var(--muted);margin-top:5px;padding-top:5px;border-top:1px dashed var(--line, #E2E8F0)}
+.lead-who{font-size:12px;margin-top:5px;padding:5px 8px;border-radius:8px;background:rgba(30,91,184,.07);color:var(--ink, #0F172A)}
+.lead-who.un{background:#FEF3C7;color:#92400E;font-weight:700}
+.lsec{display:flex;align-items:center;gap:8px;margin:14px 2px 6px;font-weight:800;font-size:14px}
+.lsec i{font-style:normal;font-size:12px;background:var(--navy);color:#fff;border-radius:99px;padding:1px 8px}
+.lsec.today{color:#15803D}.lsec.today i{background:#16A34A}
+.lead.todaynew{border-color:#22C55E !important;box-shadow:0 0 0 2px rgba(34,197,94,.25)}
+.newbadge{display:inline-block;background:#16A34A;color:#fff;font-size:10.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-inline-start:6px;vertical-align:middle}
 .pill{--c:#64748B;font-size:12px;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 12%,white);border-radius:99px;padding:2px 10px;white-space:nowrap}
 .due{font-weight:700}
 .due.late{color:var(--late)} .due.today{color:var(--today)} .due.soon{color:var(--accent)}
@@ -336,11 +344,14 @@ const ROLE_RANK = {admin:0, manager:1, leader:2, sales:3};
 const BOSS_ROLES = ['admin','manager'];
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 const SOURCES = {facebook:'فيسبوك', instagram:'إنستجرام', dubizzle:'دوبيزل', propertyfinder:'بروبرتي فايندر', aqarmap:'عقار ماب', sheet:'شيت داتا', referral:'ترشيح', walkin:'زيارة للمكتب', broker:'بروكر / شركة تانية', other:'تاني'};
-const brokerFields = (pre, l) => `<div id="${pre}BrW" class="row ${l && l.source === 'broker' ? '' : 'hidden'}">
+const isBrokerL = l => !!l && (l.source === 'broker' || l.clientType === 'broker');
+const brokerFields = (pre, l) => `<div id="${pre}BrW" class="row ${isBrokerL(l) ? '' : 'hidden'}">
   <div><label class="f">اسم البروكر / الشركة</label><input class="in" id="${pre}BrN" value="${esc((l && l.brokerName) || '')}"></div>
   <div><label class="f">رقم البروكر</label><input class="in" id="${pre}BrP" dir="ltr" inputmode="tel" value="${esc((l && l.brokerPhone) || '')}"></div></div>`;
-const brokerVal = (pre, src) => src === 'broker' ? {brokerName:($('#' + pre + 'BrN') || {}).value ? $('#' + pre + 'BrN').value.trim() : '', brokerPhone:($('#' + pre + 'BrP') || {}).value ? $('#' + pre + 'BrP').value.trim() : ''} : {brokerName:null, brokerPhone:null};
-const CLIENT_TYPES = {owner_sale:'بائع', buyer:'مشتري', owner_rent:'مؤجّر', tenant:'مستأجر'};
+const brokerVal = (pre, src, ct) => (src === 'broker' || ct === 'broker') ? {brokerName:($('#' + pre + 'BrN') || {}).value ? $('#' + pre + 'BrN').value.trim() : '', brokerPhone:($('#' + pre + 'BrP') || {}).value ? $('#' + pre + 'BrP').value.trim() : ''} : {brokerName:null, brokerPhone:null};
+const CLIENT_TYPES = {owner_sale:'بائع', buyer:'مشتري', owner_rent:'مؤجّر', tenant:'مستأجر', broker:'بروكر'};
+// يظهر خانة اسم البروكر لو المصدر بروكر أو نوع العميل بروكر
+const brToggle = pre => { const w = $('#' + pre + 'BrW'); if(w) w.classList.toggle('hidden', !(($('#' + pre + 'Src') || {}).value === 'broker' || ($('#' + pre + 'Ct') || {}).value === 'broker')); };
 const FURNISH = {furnished:'مفروش', empty:'فاضي خالص', kitchen_ac:'مطبخ وتكييفات', kitchen_app_ac:'مطبخ بأجهزة وتكييفات', kitchen:'مطبخ بس', ac:'تكييفات بس'};
 const FURNISH_EN = {furnished:'Furnished', empty:'Unfurnished', kitchen_ac:'Kitchen & ACs', kitchen_app_ac:'Kitchen with appliances & ACs', kitchen:'Kitchen only', ac:'ACs only'};
 const isUnfurn = f => !!f && f !== 'furnished';
@@ -489,8 +500,8 @@ function leadTags(l){
 // العملاء المرفوعين من شيت مالهمش createdBy، واللي اتضافوا بالإيد ليهم createdBy
 const isData = l => !l.createdBy || l.source === 'sheet';
 const isLeadK = l => !isData(l);
-const CT_SHORT = {buyer:'مشتري', owner_sale:'بائع', tenant:'مستأجر', owner_rent:'مؤجّر'};
-const CT_COLOR = {buyer:'#0F766E', owner_sale:'#B45309', tenant:'#1E5BB8', owner_rent:'#7C3AED'};
+const CT_SHORT = {buyer:'مشتري', owner_sale:'بائع', tenant:'مستأجر', owner_rent:'مؤجّر', broker:'بروكر'};
+const CT_COLOR = {buyer:'#0F766E', owner_sale:'#B45309', tenant:'#1E5BB8', owner_rent:'#7C3AED', broker:'#9D174D'};
 const ctPill = ct => ct && CT_SHORT[ct] ? `<span class="ctp" style="--c:${CT_COLOR[ct]}">${CT_SHORT[ct]}</span>` : '';
 const wantPurpose = ct => ct === 'tenant' ? 'rent' : ct === 'buyer' ? 'sale' : '';
 const AR_NUM = {'واحده':1,'واحد':1,'اتنين':2,'اثنين':2,'تلات':3,'تلاته':3,'ثلاث':3,'ثلاثه':3,'اربع':4,'اربعه':4,'خمس':5,'خمسه':5};
@@ -534,6 +545,14 @@ function parseLeadText(t){
   else if(/فاضي|بدون فرش|unfurnished|مش مفروش|غير مفروش/.test(s)) r.furn = 'empty';
   const sc = projCanon(raw); let best = '';
   projectOptions().forEach(p => { const c = projCanon(p.name); if(c.length >= 4 && sc.includes(c) && c.length > projCanon(best).length) best = p.name; });
+  if(!best){   // لو الاسم مكتوب بطريقة تانية (ذا ادرس = The Address): نقارن بهيكل الحروف
+    const tsk = new Set(s.split(/[^a-z0-9؀-ۿ]+/).filter(Boolean).flatMap(skels));
+    projectOptions().forEach(p => {
+      const ws = AR_NORM(String(p.name).toLowerCase()).split(/[^a-z0-9؀-ۿ]+/).filter(w => w && !SEARCH_STOP.has(w) && !(w in {'compound':1,'كمبوند':1}));
+      const sk = ws.flatMap(w => skels(w).slice(0, 1)).filter(x => x.length >= 3 || /^\d+$/.test(x));
+      if(sk.length && sk.every(x => tsk.has(x)) && p.name.length > best.length) best = p.name;
+    });
+  }
   if(best) r.proj = best;
   return r;
 }
@@ -556,11 +575,13 @@ function unitFits(u, q, purpose){
   if(u.pendingDup || u.status === 'sold' || u.status === 'hold') return false;
   if(u.status === 'rented' && !isSoon(u)) return false;
   if(purpose && !(u.purpose === purpose || u.purpose === 'both')) return false;
-  if(q.cat && unitCat(u) && unitCat(u) !== q.cat) return false;
+  if(!purpose || !(u.purpose === purpose || u.purpose === 'both')) return false;   // الإيجار والبيع شرط أساسي
+  if(q.cat){ if(unitCat(u) !== q.cat) return false; }
+  else if(unitCat(u) && !isRes(u) && !q.anyCat) return false;   // طلب من غير نوع = سكني (مش عيادة ولا محل)
   if(q.proj && projKey(u.project) !== projKey(q.proj)) return false;
   const b = parseInt(normNum(u.bedrooms)); if(q.beds && b && b < q.beds) return false;
   const pr = unitPrice(u, purpose); if(q.budget && pr && pr > q.budget * 1.1) return false;
-  const a = unitArea(u); if(q.area && a && a < q.area * 0.9) return false;
+  const a = unitArea(u); if(q.area && (!a || Math.abs(a - q.area) > AREA_TOL)) return false;   // المساحة ± 15 متر
   if(purpose === 'rent' && q.furn && u.furnished){
     if(q.furn === 'furnished' ? u.furnished !== 'furnished' : q.furn === 'empty' ? !isUnfurn(u.furnished) : (u.furnished !== q.furn && !(u.furnished === 'kitchen_app_ac' && q.furn === 'kitchen_ac'))) return false;
   }
@@ -588,6 +609,12 @@ function dupGroups(){
 const unitScore = u => (u.photos || []).length * 100 + (u.loc ? 50 : 0) + (u.hot ? 40 : 0) + (u.status && u.status !== 'available' ? 10 : 0) + Object.values(u).filter(v => v !== '' && v != null).length;
 const REQ_DOC = 'meta_requests';
 const REQ_KIND = {rent:'إيجار', sale:'شراء'};
+// نوع الطلب من الكلام نفسه: "للبيع / شراء / تمليك" = شراء، "إيجار" = إيجار
+function kindFromText(t){
+  const s = AR_NORM(String(t || '').toLowerCase());
+  const rent = /ايجار|اجار|ياجر|يستاجر|مستاجر|\brent/.test(s), sale = /بيع|شراء|يشتري|اشتري|تمليك|\bsale|\bbuy/.test(s);
+  return rent && !sale ? 'rent' : sale && !rent ? 'sale' : '';
+}
 const activeReqs = () => (S.requests || []).filter(r => r.active !== false).sort((a, b) => (b.at || 0) - (a.at || 0));
 const reqMatches = r => uniqUnits(S.units.filter(u => unitFits(u, r.q || {}, r.kind))).sort((a, b) => (!!b.hot - !!a.hot) || Math.abs(unitPrice(a, r.kind) - ((r.q || {}).budget || 0)) - Math.abs(unitPrice(b, r.kind) - ((r.q || {}).budget || 0)));
 const canCloseReq = r => r.by === S.me.uid || isBoss() || (isLeader() && teamOf(r.by) === S.me.uid);
@@ -628,7 +655,7 @@ function newReqSheet(){
   return `<div class="sheet-h"><h2>📌 طلب جديد</h2><button class="x" onclick="App.close()">×</button></div>
     <div class="muted" style="font-size:12.5px">اكتب أو قول اللي بتدور عليه، والطلب هيظهر للفريق كله باسمك ورقمك. من غير بيانات العميل.</div>
     <div class="seg" style="margin-top:10px"><button id="rkRent" class="on data" onclick="App.reqKind('rent')">إيجار</button><button id="rkSale" onclick="App.reqKind('sale')">شراء</button></div>
-    <textarea class="in" id="rqText" style="min-height:100px;margin-top:10px" placeholder="مثلاً: عايز شقة 3 أوض مفروشة في زايد ريزيدنس لحد 40 ألف"></textarea>
+    <textarea class="in" id="rqText" oninput="App.reqAutoKind()" style="min-height:100px;margin-top:10px" placeholder="مثلاً: عايز شقة 3 أوض مفروشة في زايد ريزيدنس لحد 40 ألف"></textarea>
     ${SpeechRec ? `<button type="button" class="btn ghost mini" style="margin-top:6px" id="rqMic" onclick="App.reqMic()">🎤 اتكلم ويتكتب</button>` : `<div class="muted" style="font-size:12px;margin-top:6px">💡 تقدر تدوس على المايك 🎤 اللي في الكيبورد وتتكلم.</div>`}
     <button class="btn block" style="margin-top:14px;background:#0F766E" id="rqSave" onclick="App.saveNewReq()">انشر الطلب للفريق</button>`;
 }
@@ -660,7 +687,7 @@ function reqCard(l){
     </div>
     <datalist id="projList">${projectOptions().slice(0, 200).map(p => `<option value="${esc(p.name)}">`).join('')}</datalist>
     <div class="row">
-      <div><label class="f">المساحة (أقل حاجة م²)</label><input class="in" id="rqArea" inputmode="numeric" value="${v('area')}" ${ph('area')}></div>
+      <div><label class="f">المساحة (م² ± 15)</label><input class="in" id="rqArea" inputmode="numeric" value="${v('area')}" ${ph('area')}></div>
       ${l.clientType === 'tenant' ? `<div><label class="f">مفروش / فاضي</label><select class="sel" id="rqFurn" style="margin:0"><option value="">مش فارقة</option>${opts(FURNISH, q.furn || '')}</select></div>` : '<div></div>'}
     </div>
     <button class="btn ghost block" style="margin-top:10px" onclick="App.saveReq()">حفظ الطلب ودوّر على وحدات</button>
@@ -707,7 +734,7 @@ function newLeadSheet(){
     </div>
     <div class="row">
       <div><label class="f">نوع العميل</label><select class="sel" id="nlCt" style="margin:0" onchange="App.nlCt()"><option value="">—</option>${opts(CLIENT_TYPES, '')}</select></div>
-      <div><label class="f">مصدر العميل</label><select class="sel" id="nlSrc" style="margin:0" onchange="$('#nlBrW').classList.toggle('hidden', this.value !== 'broker')"><option value="">—</option>${opts(SOURCES, kind === 'data' ? 'sheet' : '')}</select></div>
+      <div><label class="f">مصدر العميل</label><select class="sel" id="nlSrc" style="margin:0" onchange="brToggle('nl')"><option value="">—</option>${opts(SOURCES, kind === 'data' ? 'sheet' : '')}</select></div>
     </div>
     ${brokerFields('nl', null)}
     <div id="nlFurnW" class="hidden"><label class="f">الإيجار</label><select class="sel" id="nlFurn" style="margin:0"><option value="">—</option>${opts(FURNISH, '')}</select></div>
@@ -744,7 +771,7 @@ const PROJ_WORDS = (() => {
     'ويست':'west', 'ايست':'east', 'سوديك':'sodic', 'بيفرلي':'beverly', 'بيفرلى':'beverly', 'هيلز':'hills', 'هيلس':'hills',
     'اليجريا':'allegria', 'أليجريا':'allegria', 'الليجريا':'allegria', 'زيد':'zed', 'اي':'i', 'آي':'i', 'سيتي':'city', 'سيتى':'city', 'ستي':'city',
     'تشيل':'chill', 'شيل':'chill', 'اوت':'out', 'آوت':'out', 'او':'o', 'بادية':'badya', 'باديه':'badya', 'بالم':'palm', 'فيليدج':'village', 'فيلدج':'village', 'فيلاج':'village',
-    'سولانا':'solana', 'ذا':'the', 'ادريس':'address', 'أدريس':'address', 'كازا':'casa', 'ايتابا':'etapa', 'إيتابا':'etapa', 'ويستاون':'westown', 'ديونز':'dunes',
+    'سولانا':'solana', 'ذا':'the', 'ادريس':'address', 'أدريس':'address', 'ادرس':'address', 'أدرس':'address', 'ادريسس':'address', 'كازا':'casa', 'ايتابا':'etapa', 'إيتابا':'etapa', 'ويستاون':'westown', 'ديونز':'dunes',
     'بيل':'belle', 'في':'vie', 'فى':'vie', 'كارما':'karma', 'كرمة':'karma', 'كرمه':'karma', 'ربوة':'rabwa', 'ربوه':'rabwa', 'رويال':'royal', 'ماونتن':'mountain', 'ماونتين':'mountain',
     'فيو':'view', 'ريزيدنس':'residence', 'ريزدنس':'residence', 'ميدتاون':'midtown', 'جيريان':'jirian', 'تاورز':'towers', 'بارك':'park', 'نيوم':'nyoum', 'نيوام':'nyoum',
     'كيان':'kayan', 'باتيو':'patio', 'زهراء':'zahra', 'زهرا':'zahra', 'لافيستا':'lavista', 'فيستا':'vista', 'لا':'la', 'استيتس':'estates', 'اوراسكوم':'orascom',
@@ -850,6 +877,85 @@ const UNIT_STATUS = {available:'متاحة', rented:'متأجرة حاليًا',
 const PURPOSE = {sale:'بيع', rent:'إيجار', both:'بيع وإيجار'};
 const PURPOSE_COLOR = {sale:'#0F766E', rent:'#1E5BB8', both:'#7C3AED'};
 const unitById = id => S.units.find(u => u.id === id);
+/* ---------- آخر تحديث على الوحدة ---------- */
+const upStamp = what => ({updatedAt:Date.now(), updatedBy:S.me.uid, updatedByName:S.me.name, updatedWhat:what || 'عدّل البيانات'});
+const shortDate = ms => new Date(ms).toLocaleDateString('ar-EG', {day:'numeric', month:'short'});
+function lastUpd(u){
+  if(u.updatedAt) return {at:u.updatedAt, by:u.updatedByName || userName(u.updatedBy), what:u.updatedWhat || ''};
+  if(u.createdAt) return {at:u.createdAt, by:u.agentName || userName(u.createdBy), what:'اتضافت'};
+  return null;
+}
+const lastUpdTxt = u => { const x = lastUpd(u); return x ? `🕓 آخر تحديث: ${shortDate(x.at)} · ${esc(x.by || '—')}` : ''; };
+/* ---------- الإتاحة: المتاح دلوقتي الأول، وبعده الأقرب فالأقرب ---------- */
+const availNow = u => !u.status || u.status === 'available' || (u.status === 'rented' && !!u.availableFrom && u.availableFrom <= Date.now());
+const availDays = u => availNow(u) ? 0 : u.status === 'rented' && u.availableFrom ? Math.ceil((u.availableFrom - Date.now()) / DAY) : null;
+function availRank(u){
+  if(availNow(u)) return 0;
+  if(u.status === 'rented') return u.availableFrom ? 1 + (u.availableFrom - Date.now()) / DAY : 5e5;
+  if(u.status === 'hold') return 6e5;
+  return 7e5;   // اتباعت
+}
+const isRes = u => ['apartment', 'villa'].includes(unitCat(u));
+/* ---------- البحث الذكي: بيفهم الإيجار/البيع والمساحة والغرف والنوع من الكلام ويطبقهم كلهم مع بعض ---------- */
+const AREA_TOL = 15;   // المساحة ± 15 متر
+const Q_CATS = (() => {
+  const src = {'شقه':'apartment','شقة':'apartment','شقق':'apartment','apartment':'apartment','apartments':'apartment','flat':'apartment','flats':'apartment','سكني':'res','residential':'res',
+    'فيلا':'villa','فيلات':'villa','فلل':'villa','villa':'villa','villas':'villa','مكتب':'office','مكاتب':'office','اداري':'office','office':'office','offices':'office','administrative':'office',
+    'عياده':'medical','عيادة':'medical','عيادات':'medical','طبي':'medical','clinic':'medical','clinics':'medical','medical':'medical','محل':'retail','محلات':'retail','تجاري':'retail','shop':'retail','shops':'retail','retail':'retail','commercial':'retail'};
+  const o = {}; Object.entries(src).forEach(([a, e]) => o[AR_NORM(a)] = e); return o;
+})();
+const Q_SUB = {'دوبلكس':'apartment','duplex':'apartment','بنتهاوس':'apartment','penthouse':'apartment','ستوديو':'apartment','استوديو':'apartment','studio':'apartment','شاليه':'apartment','chalet':'apartment','روف':'apartment',
+  'تاون':'villa','townhouse':'villa','توين':'villa','twin':'villa','twinhouse':'villa','ستاند':'villa'};
+const Q_STOP = new Set(['عايز','عاوز','عايزه','محتاج','دور','ابحث','على','علي','في','فى','ب','بـ','و','او','كمبوند','كومباوند','كمباوند','compound','مشروع','project','وحده','unit','units','in','for','with','متاح','متاحه','حوالي','تقريبا']);
+function parseUnitQuery(q){
+  let s = ' ' + AR_NORM(String(q || '').toLowerCase()).replace(/[٫]/g, '.').replace(/[،,؛;]/g, ' ') + ' ';
+  const r = {};
+  const cut = re => { let m = null; s = s.replace(re, (...a) => { m = m || a; return ' '; }); return m; };
+  const rent = cut(/\s(?:لل|ل|ب|و)?(?:ايجار|اجار|ايجارات|rent|rental|for rent)(?=\s)/g);
+  const sale = cut(/\s(?:لل|ل|ب|و)?(?:بيع|تمليك|شراء|شرا|sale|for sale|sell|resale)(?=\s)/g);
+  if(rent && !sale) r.purpose = 'rent'; else if(sale && !rent) r.purpose = 'sale';
+  let m = cut(/\s(\d{2,4})\s*(?:متر|مترمربع|م2|م²|م|sqm|m2|meters?|meter|m)(?=\s)/) || cut(/\s(?:مساحه|مساحتها|بمساحه|area)\s*(\d{2,4})(?=\s)/);
+  if(m) r.area = +m[1];
+  m = cut(/\s(\d)\s*(?:غرف|غرفه|اوض|اوضه|نوم|br|bed|beds|bedrooms?|rooms?)(?=\s)/);
+  if(m) r.beds = +m[1]; else if(cut(/\s(?:اوضتين|غرفتين)(?=\s)/)) r.beds = 2;
+  if(cut(/\s(?:مش|غير|بدون)\s*مفروش[ه]?(?=\s)|\sunfurnished(?=\s)/)) r.furn = 'empty';
+  else if(cut(/\s(?:مفروش|مفروشه|furnished)(?=\s)/)) r.furn = 'furnished';
+  const rest = [], nums = [];
+  s.split(/\s+/).filter(Boolean).forEach(w => {
+    const base = w.startsWith('ال') && w.length > 3 ? w.slice(2) : w;
+    const c = Q_CATS[w] || Q_CATS[base];
+    if(c){ if(c === 'res') r.res = true; else r.cat = c; return; }
+    if(Q_SUB[w] || Q_SUB[base]){ r.cat = r.cat || Q_SUB[w] || Q_SUB[base]; rest.push(w); return; }
+    if(Q_STOP.has(w)) return;
+    if(/^\d{2,4}$/.test(w)){ nums.push(w); return; }
+    rest.push(w);
+  });
+  r.nums = nums; r.text = rest.join(' ');
+  // لو بيدور على سكني (غرف أو مفروش) أو حدد إيجار/بيع/مساحة من غير ما يقول نوع: التجاري والطبي والإداري مايطلعوش
+  if(!r.cat && (r.res || r.beds || r.furn || r.purpose || r.area)) r.res = true;
+  r.any = !!(r.purpose || r.area || r.beds || r.cat || r.res || r.furn);
+  return r;
+}
+function unitMatchesQuery(u, Q){
+  if(Q.purpose && !(u.purpose === Q.purpose || u.purpose === 'both')) return false;
+  if(Q.cat){ const c = unitCat(u); if(c !== Q.cat) return false; }
+  else if(Q.res){ const c = unitCat(u); if(c && !isRes(u)) return false; }
+  if(Q.area){ const a = unitArea(u); if(!a || Math.abs(a - Q.area) > AREA_TOL) return false; }
+  if(Q.beds){ const b = parseInt(normNum(u.bedrooms)); if(!b || b !== Q.beds) return false; }
+  if(Q.furn === 'furnished' && u.furnished !== 'furnished') return false;
+  if(Q.furn === 'empty' && !isUnfurn(u.furnished)) return false;
+  const idx = unitSearchIdx(u);
+  for(const n of Q.nums){
+    const inText = new RegExp('(^|[^0-9])' + n + '([^0-9]|$)').test(idx.plain);
+    const a = unitArea(u);
+    if(!inText && !(a && Math.abs(a - +n) <= AREA_TOL)) return false;
+  }
+  return !Q.text || searchMatch(Q.text, idx);
+}
+function queryHint(Q){
+  const p = [Q.purpose && PURPOSE[Q.purpose], Q.cat ? UNIT_CATS[Q.cat] : Q.res ? 'سكني' : '', Q.beds && (Q.beds + ' غرف'), Q.area && (`${Q.area} م² (±${AREA_TOL})`), Q.furn && FURNISH[Q.furn], Q.text && ('"' + Q.text + '"'), Q.nums.length && Q.nums.join('، ')].filter(Boolean);
+  return p.length ? p.join(' · ') : '';
+}
 const canSeeOwner = u => isBoss() || u.agentId === S.me.uid || (isLeader() && u.teamId === S.me.uid);
 const canEditUnit = u => !u || canSeeOwner(u);
 const soonDays = u => u.status === 'rented' && u.availableFrom ? Math.ceil((u.availableFrom - Date.now()) / DAY) : null;
@@ -864,25 +970,31 @@ function setUnits(pages){
   S.staff = (pages && pages[STAFF_DOC] && pages[STAFF_DOC].staff) || {};
   S.aliases = {}; Object.entries((pages && pages[LAYOUT_DOC] && pages[LAYOUT_DOC].aliases) || {}).forEach(([k, v]) => { if(v && v !== k) S.aliases[k] = v; });
   S.settings = (pages && pages[SETTINGS_DOC]) || {}; applyTheme(S.settings.theme);
-  S.requests = Object.entries((pages && pages[REQ_DOC] && pages[REQ_DOC].requests) || {}).filter(([, r]) => r && r.text).map(([id, r]) => ({...r, id}));
   S.reports = {}; S.reportDocs = [];
   Object.entries(pages || {}).forEach(([pid, p]) => { if(!pid.startsWith(REPORT_DOC)) return; S.reportDocs.push(pid); Object.entries((p && p.reports) || {}).forEach(([d, m]) => { S.reports[d] = {...(S.reports[d] || {}), ...m}; }); });
   Object.entries(pages || {}).forEach(([pid, p]) => {
     if(pid.startsWith('meta_')) return;
     const us = (p && p.units) || {}; S.unitPages[pid] = Object.keys(us).length;
-    Object.entries(us).forEach(([id, u]) => all.push({...u, id, page:pid}));
+    Object.entries(us).forEach(([id, u]) => {
+      const x = {...u, id, page:pid};
+      // تحذيرات التكرار القديمة بسبب الصور أو التفاصيل اتلغت — التكرار دلوقتي برقم الوحدة أو المالك بس
+      if(x.pendingDup && /الصور|التفاصيل/.test(x.pendingDup.reason || '')) x.pendingDup = null;
+      all.push(x);
+    });
   });
   S.units = all;
+  S.requests = Object.entries((pages && pages[REQ_DOC] && pages[REQ_DOC].requests) || {}).filter(([, r]) => r && r.text).map(([id, r]) => ({...r, id, kind:kindFromText(r.text) || r.kind, q:{...parseLeadText(r.text), ...(r.q || {}), proj:(r.q && r.q.proj) || parseLeadText(r.text).proj}}));
 }
 function filteredUnits(){
-  const f = S.uf, qq = f.q.trim();
+  const f = S.uf, qq = f.q.trim(), Q = qq ? parseUnitQuery(qq) : null;
   const pmin = f.pmin ? (moneyNums(f.pmin)[0] || 0) : 0, pmax = f.pmax ? (moneyNums(f.pmax)[0] || 0) : 0;
   const amin = +f.amin || 0, amax = +f.amax || 0;
   return S.units.filter(u => {
     if(!canSeePending(u)) return false;
     if(f.purpose !== 'all' && !(u.purpose === f.purpose || (u.purpose === 'both' && f.purpose !== 'both'))) return false;
     if(f.furn !== 'all' && !(f.furn === 'empty' ? isUnfurn(u.furnished) : u.furnished === f.furn)) return false;
-    if(f.st === 'available' && u.status && u.status !== 'available') return false;
+    if(f.st === 'available' && !availNow(u)) return false;
+    if(f.st === 'month'){ const d = availDays(u); if(d === null || d <= 0 || d > 30) return false; }
     if(f.st === 'rented' && u.status !== 'rented') return false;
     if(f.st === 'soon' && !isSoon(u)) return false;
     if(f.st === 'hot' && !u.hot) return false;
@@ -893,10 +1005,10 @@ function filteredUnits(){
     if(f.proj && projKey(u.project) !== f.proj) return false;
     if(pmin || pmax){ const p = unitPrice(u, f.purpose); if(!p || (pmin && p < pmin) || (pmax && p > pmax)) return false; }
     if(amin || amax){ const a = unitArea(u); if(!a || (amin && a < amin) || (amax && a > amax)) return false; }
-    if(qq && !searchMatch(qq, unitSearchIdx(u))) return false;
+    if(Q && !unitMatchesQuery(u, Q)) return false;
     return true;
   }).sort((a, b) => (unitScore(b) - unitScore(a))).filter(((seen) => u => { const k = String(u.code || '').trim().toLowerCase(); if(!k) return true; if(seen.has(k)) return false; seen.add(k); return true; })(new Set()))
-    .sort((a, b) => (!!b.hot - !!a.hot) || (isSoon(b) - isSoon(a)) || ((b.createdAt || 0) - (a.createdAt || 0)));
+    .sort((a, b) => (availRank(a) - availRank(b)) || (!!b.hot - !!a.hot) || ((b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)));
 }
 function unitStatusText(u){
   if(u.status === 'rented'){
@@ -910,7 +1022,7 @@ function unitItem(u){
   const sub = [u.code, u.unitNo && ('وحدة ' + u.unitNo), u.bedrooms && (u.bedrooms + ' غرف'), u.bua && (String(u.bua).replace(/m$/i, '') + ' م²'), u.floor && ('دور ' + u.floor)].filter(Boolean).join(' · ');
   const soon = isSoon(u);
   return `<button class="lead unit${u.hot ? ' hot' : ''}" onclick="App.openUnit('${u.id}')">
-    ${u.pendingDup ? `<div class="tag" style="background:#FFEDD5;color:#9A3412;display:inline-block;margin-bottom:4px">⏳ متكررة — مستنية موافقة المدير</div>` : ''}
+    ${u.pendingDup ? `<div class="tag" style="background:#FFEDD5;color:#9A3412;display:inline-block;margin-bottom:4px">⏳ ${/نفس المالك/.test(u.pendingDup.reason || '') ? 'نفس المالك' : 'متكررة'} — مستنية موافقة المدير</div>` : ''}
     <div class="lead-top"><b>${u.hot ? '🔥 ' : ''}${esc([u.type, u.project].filter(Boolean).join(' · ') || 'وحدة')}</b><span class="pill" style="--c:${PURPOSE_COLOR[u.purpose] || '#64748B'}">${PURPOSE[u.purpose] || '—'}</span></div>
     <div class="lead-sub">${esc(sub)}</div>
     <div class="lead-meta">${u.price ? `<span class="price">${esc(u.price)}</span>` : ''}${u.finishing ? `<span>${esc(u.finishing)}</span>` : ''}
@@ -918,6 +1030,7 @@ function unitItem(u){
       <span class="${soon ? 'due late' : ''}">${esc(unitStatusText(u))}</span>
       ${(u.photos || []).length ? `<span>📷 ${(u.photos || []).length}</span>` : ''}
       ${u.agentName ? `<span>مع ${esc(u.agentName)}</span>` : ''}</div>
+    ${lastUpd(u) ? `<div class="lead-upd">${lastUpdTxt(u)}</div>` : ''}
   </button>`;
 }
 function unitsView(){
@@ -940,10 +1053,11 @@ function unitsView(){
       <button class="btn danger block" style="margin-top:8px" id="dedupBtn" onclick="App.dedupUnits()">🧹 نظّف الوحدات المكررة</button></div>`; })() : ''}
     ${pend ? `<button class="alert" style="margin-bottom:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.uf('st', 'pending')"><b>${pend}</b><div>وحدة متكررة مستنية موافقة المدير</div></button>` : ''}
     ${soon ? `<button class="alert" style="margin-bottom:10px" onclick="App.uf('st', 'soon')"><b>${soon}</b><div>وحدة متأجرة هتفضى خلال ${daysTxt(cfg('availRemindDays'))} أو فضيت — كلّم المالك</div></button>` : ''}
-    <input class="search" id="uq" type="search" placeholder="دوّر بالعربي أو English: ذا أدرس، Palm Hills، شقة..." value="${esc(f.q)}" oninput="App.usearch(this.value)">
+    <input class="search" id="uq" type="search" placeholder="مثلاً: شقة للإيجار ذا أدرس 150 متر" value="${esc(f.q)}" oninput="App.usearch(this.value)">
+    <div class="chips" style="padding-top:2px"><b style="font-size:12.5px;align-self:center;white-space:nowrap">الإتاحة:</b>${chip('st', 'all', 'الكل')}${chip('st', 'available', '✅ متاح الآن')}${chip('st', 'month', '📅 خلال شهر')}</div>
     <div class="chips">${chip('purpose', 'all', 'الكل')}${chip('purpose', 'sale', 'بيع')}${chip('purpose', 'rent', 'إيجار')}
       ${chip('st', 'hot', '🔥 هوت ديل')}${chip('furn', 'furnished', 'مفروش')}${chip('furn', 'empty', 'مش مفروش')}
-      ${chip('st', 'available', 'متاحة')}${chip('st', 'rented', 'متأجرة')}${chip('st', 'soon', 'هتفضى قريب')}
+      ${chip('st', 'rented', 'متأجرة')}${chip('st', 'soon', 'هتفضى قريب')}
       ${chip('mine', true, isBoss() ? 'كلها' : isLeader() ? 'بتاعة فريقي' : 'بتوعي')}</div>
     <div class="chips" style="padding-top:2px"><button class="chip ${S.ufOpen || extra ? 'on' : ''}" onclick="App.ufToggle()">⚙️ فلاتر أكتر${extra ? `<i>${extra}</i>` : ''}</button>
       ${['1','2','3','4','5'].map(b => chip('beds', b, b === '5' ? '5+ غرف' : b + ' غرف')).join('')}
@@ -964,8 +1078,9 @@ function unitsView(){
 }
 function unitListHTML(list){
   list = list || filteredUnits();
-  if(!list.length) return `<div class="empty">${S.units.length ? 'مفيش وحدات بالفلتر ده' : 'لسه مفيش وحدات. ضيف وحدة أو ارفع شيت الإنفنتوري.'}</div>`;
-  return `<div class="muted" style="font-size:12.5px;margin-top:4px">${list.length} وحدة</div>`
+  if(!list.length){ const hint = S.uf.q.trim() ? queryHint(parseUnitQuery(S.uf.q)) : ''; return `<div class="empty">${S.units.length ? 'مفيش وحدات بالفلتر ده' + (hint ? `<div style="font-size:12.5px;margin-top:6px">السيستم دوّر على: ${esc(hint)}</div>` : '') : 'لسه مفيش وحدات. ضيف وحدة أو ارفع شيت الإنفنتوري.'}</div>`; }
+  const hint = S.uf.q.trim() ? queryHint(parseUnitQuery(S.uf.q)) : '';
+  return `<div class="muted" style="font-size:12.5px;margin-top:4px">${list.length} وحدة${hint ? ` · <span style="color:var(--navy)">بيدور على: ${esc(hint)}</span>` : ''} · المتاح دلوقتي الأول وبعده الأقرب</div>`
     + list.slice(0, S.ulimit).map(unitItem).join('')
     + (list.length > S.ulimit ? `<button class="more" onclick="App.umore()">اعرض أكتر (${list.length - S.ulimit})</button>` : '');
 }
@@ -1231,7 +1346,7 @@ function unitHotBlock(u){
 function unitPendingBlock(u){
   const d = u.pendingDup; if(!d) return '';
   return `<div class="card" style="margin-top:10px;background:#FFF7ED;border-color:#FED7AA">
-    <b style="color:#9A3412">⏳ الوحدة دي شكلها متسجلة قبل كده</b>
+    <b style="color:#9A3412">⏳ ${/نفس المالك/.test(d.reason || '') ? 'المالك ده عنده وحدة تانية متسجلة' : 'الوحدة دي شكلها متسجلة قبل كده'}</b>
     <div style="font-size:13.5px;margin-top:4px">${esc(d.reason || '')}</div>
     <div style="font-size:13.5px">سجّلها قبل كده: <b>${esc(d.agentName || d.byName || '—')}</b>${d.code ? ` · كود <span dir="ltr">${esc(d.code)}</span>` : ''}${d.at ? ' · ' + new Date(d.at).toLocaleDateString('ar-EG') : ''}</div>
     <div class="muted" style="font-size:12.5px">طلب تسجيلها: ${esc(d.reqByName || '')}</div>
@@ -1274,6 +1389,7 @@ function unitSheet(u){
     ${row('السعر', u.price)}${row('المقدم', u.downPayment)}${row('سعر تاني', u.otherPrice)}
     ${row('الاستلام', [u.delivery, u.deliveryDate].filter(Boolean).join(' — '))}
     <div><span>الحالة</span><b class="${isSoon(u) ? 'due late' : ''}">${esc(unitStatusText(u))}</b></div>
+    ${lastUpd(u) ? `<div><span>آخر تحديث</span><b>${esc(fmt(lastUpd(u).at))} — ${esc(lastUpd(u).by || '—')}</b>${lastUpd(u).what ? ` <span class="muted" style="font-size:12px">(${esc(lastUpd(u).what)})</span>` : ''}</div>` : ''}
     ${row('السيلز', u.agentName)}${row('تاريخ الإضافة', u.date || (u.createdAt ? new Date(u.createdAt).toLocaleDateString('ar-EG') : ''))}
   </div>
   ${u.notes ? `<div class="card" style="margin-top:10px;white-space:pre-wrap;font-size:14px">${esc(u.notes)}</div>` : ''}
@@ -1456,6 +1572,14 @@ function ownerKeyOf(phone){
   let h = 2166136261; for(const ch of 'blue:' + d.slice(-9)){ h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
   return h.toString(36);
 }
+// بصمة اسم المالك (اسمين على الأقل): بتتخزن مع الوحدة من غير ما الاسم نفسه يبان
+function ownerNameKeyOf(name){
+  const w = AR_NORM(String(name || '').toLowerCase()).replace(/[^a-z\s؀-ۿ]/g, ' ').split(/\s+/).filter(x => x.length > 1 && !['عبد','abd','el','al'].includes(x));
+  if(w.length < 2) return '';
+  const t = w.slice(0, 3).join(' '); if(t.length < 7) return '';
+  let h = 2166136261; for(const ch of 'bluen:' + t){ h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(36);
+}
 const normNo = v => AR_NORM(String(v || '').toLowerCase()).replace(/[^a-z0-9؀-ۿ]/g, '');
 const normNum = v => String(v || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d.]/g, '');
 // بصمة الصورة (dHash 64 بت) — صورتين شبه بعض = نفس البصمة تقريبًا حتى لو اتضغطت أو اتصغرت
@@ -1474,18 +1598,14 @@ async function photoHash(file){
   }catch(e){ return ''; }
 }
 function hamming(a, b){ let n = 0; for(let i = 0; i < 16; i++){ let v = parseInt(a[i], 16) ^ parseInt(b[i], 16); while(v){ n += v & 1; v >>= 1; } } return n; }
-function findDupUnit(data, okey, hashes, selfId){
+// التكرار بيتحدد بـ 3 حاجات بس: رقم الوحدة (في نفس المشروع)، رقم المالك، اسم المالك — الصور والتفاصيل مش بتتحسب تكرار
+function findDupUnit(data, okey, nkey, selfId){
   const pk = projKey(data.project), no = normNo(data.unitNo);
-  const same = (a, b) => normNum(a) && normNum(a) === normNum(b);
+  if(pk && no) for(const u of S.units){ if(u.id !== selfId && pk === projKey(u.project) && no === normNo(u.unitNo)) return {u, same:true, reason:'نفس المشروع ونفس رقم الوحدة — الوحدة دي متسجلة قبل كده'}; }
   for(const u of S.units){
     if(u.id === selfId) continue;
-    if(okey && u.ownerKey === okey) return {u, reason:'نفس رقم المالك متسجل في وحدة تانية'};
-    if(pk && pk === projKey(u.project)){
-      if(no && no === normNo(u.unitNo)) return {u, reason:'نفس المشروع ونفس رقم الوحدة'};
-      if(!no && same(data.bua, u.bua) && same(data.floor, u.floor) && same(data.bedrooms, u.bedrooms) && normNo(data.type) === normNo(u.type) && same(data.price, u.price))
-        return {u, reason:'نفس التفاصيل (المشروع والنوع والمساحة والدور والغرف والسعر)'};
-    }
-    if(hashes && hashes.length && (u.phHash || []).some(h => hashes.some(x => x && h && hamming(x, h) <= 6))) return {u, reason:'نفس الصور مرفوعة على وحدة تانية'};
+    if(okey && u.ownerKey === okey) return {u, same:false, reason:'نفس المالك (نفس الرقم) عنده وحدة تانية متسجلة — محتاجة موافقة الأدمن'};
+    if(nkey && u.ownerNameKey === nkey) return {u, same:false, reason:'نفس المالك (نفس الاسم) عنده وحدة تانية متسجلة — محتاجة موافقة الأدمن'};
   }
   return null;
 }
@@ -1494,14 +1614,14 @@ const dupInfo = (f, reqBy) => ({reason:f.reason, otherId:f.u.id, code:f.u.code |
 // الوحدات القديمة (المرفوعة قبل الميزة دي): المدير بيكمّل بصمة رقم المالك ليها على دفعات
 async function backfillOwnerKeys(){
   if(!isBoss() || S._bf || !S.units.length) return;
-  const todo = S.units.filter(u => u.ownerKey === undefined).slice(0, 150);
+  const todo = S.units.filter(u => u.ownerKey === undefined || u.ownerNameKey === undefined).slice(0, 150);
   if(!todo.length) return;
   S._bf = true;
   try{
     const byPage = {};
     for(const u of todo){
       let o = null; try{ o = S.ownerCache[u.id] !== undefined ? S.ownerCache[u.id] : await store.getOwner(u.id); }catch(e){}
-      (byPage[u.page] = byPage[u.page] || {})[u.id] = {ownerKey:o ? ownerKeyOf(o.ownerPhone) || ownerKeyOf(o.otherPhone) : ''};
+      (byPage[u.page] = byPage[u.page] || {})[u.id] = {ownerKey:o ? ownerKeyOf(o.ownerPhone) || ownerKeyOf(o.otherPhone) : '', ownerNameKey:o ? ownerNameKeyOf(o.ownerName) : ''};
     }
     for(const [pid, map] of Object.entries(byPage)) await store.patchUnits(pid, map);
   }catch(e){}
@@ -1733,6 +1853,7 @@ function makeFirebaseStore(){
       await auth.signInWithEmailAndPassword(email, pw);
     },
     async registerAdmin(pw){ await auth.createUserWithEmailAndPassword(ADMIN_EMAIL, pw); },
+    async resetPw(email){ if(!auth) throw {message:'السيستم لسه بيحمّل، استنى ثانية وجرّب تاني'}; auth.languageCode = 'ar'; await auth.sendPasswordResetEmail(email); },
     signOut(){ return auth.signOut(); },
     onUsers(cb){
       if(BOSS_ROLES.includes(me.role))
@@ -1935,6 +2056,9 @@ function onAuth(me){
   S.unsub.push(store.onActivities(a => { S.acts = a; if(S.tab === 'activity') render(); }));
   S.photoCache = {}; S.ownerCache = {}; S.inv = null; S.units = []; S.unitPages = {}; S._unitsSeen = false;
   S.unsub.push(store.onUnits(pages => { const prevReq = new Set((S.requests || []).map(r => r.id)), hadUnits = !!S._unitsSeen; setUnits(pages); S._unitsSeen = true;
+    if(mustReport(S.me)){ let seen = 0; try{ seen = +localStorage.getItem('blueRepSeen') || 0; }catch(e){}
+      const mine = [dayKey(), dayKey(Date.now() - DAY)].flatMap(d => repReplies(reportOf(S.me.uid, d))).filter(x => x.by !== S.me.uid && x.at > Math.max(seen, S._repNotified || 0)).sort((a, b) => b.at - a.at);
+      if(mine.length){ S._repNotified = mine[0].at; toast(`💬 ${mine[0].byName} ردّ على تقريرك: ${mine[0].text.slice(0, 60)}`); beep('nudge'); } }
     if(hadUnits){ const nr = (S.requests || []).filter(r => !prevReq.has(r.id) && r.by !== S.me.uid && r.active !== false); if(nr.length){ toast(`📌 طلب جديد من ${nr[0].byName}: ${nr[0].text.slice(0, 60)}`); beep('info'); } }
     if(isBoss()) (S.requests || []).filter(r => r.active === false && Date.now() - (r.closedAt || r.at || 0) > 30 * DAY).slice(0, 20).forEach(r => store.delMetaKey(REQ_DOC, 'requests', r.id).catch(() => {})); S.ownerCache = {}; if(['units','today','home','leads','data'].includes(S.tab)) render(); if(isBoss()){ setTimeout(backfillOwnerKeys, 3000); pruneReports(); } }));
   render();
@@ -2009,6 +2133,8 @@ function loginView(){
       <input class="in" id="pw" type="password" autocomplete="current-password" dir="ltr" required>
       ${S.authErr ? `<div class="err">${esc(S.authErr)}</div>` : ''}
       <button class="btn block" style="margin-top:14px" id="lgBtn">دخول</button>
+      <button type="button" style="display:block;margin:10px auto 0;border:0;background:none;color:var(--accent);font-weight:700;padding:6px" onclick="App.forgotPw()">نسيت كلمة السر؟</button>
+      ${S.fpMsg ? `<div class="card" style="margin-top:8px;font-size:13px;line-height:1.7;background:#F0F9FF;border-color:#BAE6FD">${S.fpMsg}</div>` : ''}
     </form>
     <p style="text-align:center;font-size:13px" class="muted">الأدمن بيدخل بالإيميل بتاعه.<br>
       <button style="border:0;background:none;color:var(--accent);font-weight:700;padding:6px" onclick="App.toggleReg()">أول مرة تدخل كأدمن؟</button></p>
@@ -2204,6 +2330,16 @@ const reportDeadline = (t = Date.now()) => { const d = new Date(t); d.setHours(r
 const mustReport = u => !!u && ['sales', 'leader'].includes(u.role);
 const reportOf = (uid, day = dayKey()) => ((S.reports || {})[day] || {})[uid] || null;
 const reportLate = () => mustReport(S.me) && !reportOf(S.me.uid) && Date.now() > reportDeadline();
+// الرد على التقرير: الأدمن والسيلز مانجر على الكل، والتيم ليدر على فريقه
+const canReplyRep = uid => uid !== S.me.uid && (isBoss() || (isLeader() && teamOf(uid) === S.me.uid));
+const repReplies = r => Object.entries((r && r.replies) || {}).filter(([, x]) => x && x.text).map(([id, x]) => ({...x, id})).sort((a, b) => a.at - b.at);
+const REP_QUICK = ['👏 تقرير ممتاز، كمّل كده', '💪 شغل حلو', 'محتاج تزوّد المكالمات بكرة', 'ركّز على الليدز الجديدة الأول'];
+function repRepliesHTML(r){
+  const rs = repReplies(r); if(!rs.length) return '';
+  return `<h3>💬 الردود (${rs.length})</h3>` + rs.map(x => `<div class="card" style="margin-top:6px;display:flex;gap:10px;align-items:flex-start">${avatarHtml(x.by, 32)}
+    <div style="flex:1"><b>${esc(x.byName || '')}</b> <span class="muted" style="font-size:11.5px">${esc(ROLE_LABEL[x.role] || '')} · ${ago(x.at)}</span>
+    <div style="font-size:14px;white-space:pre-wrap;margin-top:2px">${esc(x.text)}</div></div></div>`).join('');
+}
 const isLateReport = (r, day) => r && r.at > reportDeadline(new Date(day + 'T12:00').getTime());
 function dayStats(uid, day = dayKey()){
   const t0 = new Date(day + 'T00:00').getTime(), t1 = t0 + DAY, ids = uidsOf(uid);
@@ -2224,7 +2360,8 @@ function myReportCard(){
   if(r) return `<div class="card repcard ${isLateReport(r, dayKey()) ? 'late' : 'ok'}" style="margin-top:12px">
     <div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">${isLateReport(r, dayKey()) ? '⏰' : '✅'}</span>
     <div style="flex:1"><b>تقرير النهارده اتبعت الساعة ${timeStr(r.at)}${isLateReport(r, dayKey()) ? ' — بعد الساعة ' + RH() : ''}</b></div>
-    <button class="btn ghost mini" onclick="App.repSheet()">تعديل</button></div></div>`;
+    <button class="btn ghost mini" onclick="App.repSheet()">تعديل</button></div>
+    ${repReplies(r).length ? (x => `<button class="reprow" style="margin-top:6px" onclick="App.repSheet()">💬 <b>${esc(x.byName)}</b> ردّ: ${esc(x.text.length > 60 ? x.text.slice(0, 60) + '…' : x.text)}${repReplies(r).length > 1 ? ` <span class="muted">(+${repReplies(r).length - 1})</span>` : ''}</button>`)(repReplies(r).slice(-1)[0]) : ''}</div>`;
   return `<button class="card repcard ${late ? 'late' : 'due'}" style="margin-top:12px;width:100%;text-align:right" onclick="App.repSheet()">
     <div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">📝</span>
     <div style="flex:1"><b>${late ? '⚠️ متأخر — ابعت تقرير النهارده دلوقتي' : `ابعت تقرير النهارده قبل الساعة ${RH()}`}</b>
@@ -2242,7 +2379,8 @@ function teamReportsCard(){
     const r = reportOf(u.uid, day), late = isLateReport(r, day);
     const st = r ? `<span class="${late ? 'c-late' : 'c-ok'}">${late ? '⏰' : '✓'} ${timeStr(r.at)}${late ? ' متأخر' : ''}</span>`
       : past ? `<span class="c-late">⚠️ مبعتش</span>` : `<span class="muted">لسه — قبل ${RH()}</span>`;
-    return `<button class="reprow ${!r && past ? 'miss' : late ? 'lateb' : ''}" onclick="App.viewRep('${u.uid}', '${day}')">${avatarHtml(u.uid, 30)}<b style="flex:1">${esc(u.name)}</b>${st}</button>`;
+    const nr = repReplies(r).length;
+    return `<button class="reprow ${!r && past ? 'miss' : late ? 'lateb' : ''}" onclick="App.viewRep('${u.uid}', '${day}')">${avatarHtml(u.uid, 30)}<b style="flex:1">${esc(u.name)}</b>${nr ? `<span class="muted" style="font-size:12px">💬 ${nr}</span>` : r && canReplyRep(u.uid) ? '<span class="muted" style="font-size:11.5px">رُد</span>' : ''}${st}</button>`;
   }).join('')}</div>`;
 }
 // تقارير أقدم من 3 شهور بتتمسح عشان التحميل يفضل خفيف
@@ -2351,20 +2489,32 @@ function byPriority(a, b){
   if(a.nextFollowUp && b.nextFollowUp && prio(a) < 2) return a.nextFollowUp - b.nextFollowUp;
   return (b.lastContactAt || b.createdAt || 0) - (a.lastContactAt || a.createdAt || 0);
 }
+// مين ضاف الليد، واتوزع ولا لأ، وعلى مين
+function leadWho(l){
+  const addedBy = l.createdByName || (l.createdBy ? userName(l.createdBy) : '');
+  const ah = (l.history || []).filter(h => h.status === 'assign' && /اتوزع|حوّل/.test(h.note || '')).sort((a, b) => b.at - a.at)[0];
+  const distBy = l.assignedByName || (ah && ah.byName) || (l.assignedTo && l.createdBy && l.createdBy !== l.assignedTo ? addedBy : '');
+  const added = addedBy ? `➕ ضافه <b>${esc(addedBy)}</b>` : isData(l) ? '📋 من شيت داتا' : '';
+  if(!l.assignedTo) return `<div class="lead-who un">${added ? added + ' · ' : ''}⏳ لسه ما اتوزعش</div>`;
+  const self = l.createdBy && l.createdBy === l.assignedTo && !l.assignedByName;
+  return `<div class="lead-who">${added ? added + ' · ' : ''}${self ? `📌 معاه هو` : `📤 ${distBy ? `${esc(distBy)} وزّعه على` : 'اتوزع على'} <b>${esc(userName(l.assignedTo))}</b>`}${l.assignedAt ? ` <span class="muted">(${ago(l.assignedAt)})</span>` : ''}</div>`;
+}
 function leadItem(l){
   const st = STATUSES[l.status] || STATUSES.new;
   const due = l.nextFollowUp && OPEN.has(l.status) ? dueLabel(l.nextFollowUp) : null;
   if(due && l.status === 'viewing') due.txt = '🚶 ' + due.txt.replace('متابعة', 'معاينة');
   const sub = [l.project, l.unit && ('وحدة ' + l.unit)].filter(Boolean).join(' · ');
   const hotNew = isLeadK(l) && l.status === 'new' && !l.lastContactAt;
-  return `<button class="lead ${isLeadK(l) ? 'is-lead' : 'is-data'}${l.nudge ? ' nudged' : hotNew ? ' fresh' : ''}" onclick="App.open('${l.id}')">
+  const isTodayL = isLeadK(l) && (l.createdAt || 0) >= startOfDay();
+  return `<button class="lead ${isLeadK(l) ? 'is-lead' : 'is-data'}${l.nudge ? ' nudged' : hotNew ? ' fresh' : ''}${isTodayL ? ' todaynew' : ''}" onclick="App.open('${l.id}')">
     ${l.nudge ? `<div class="nudgebar">⚠️ ${myNudge(l) ? 'تنبيه من ' + esc(l.nudge.byName) : 'متنبّه من ' + esc(l.nudge.byName)}: ${esc(l.nudge.msg)}</div>` : ''}
     ${hotNew ? `<div class="freshbar">🔥 ليد جديد ${l.assignedAt || l.createdAt ? '· وصل ' + ago(l.assignedAt || l.createdAt) : ''} — كلّمه دلوقتي</div>` : ''}
-    <div class="lead-top"><b>${esc(l.name || 'بدون اسم')} ${ctPill(l.clientType)}</b><span class="pill" style="--c:${st.color}">${st.label}</span></div>
+    <div class="lead-top"><b>${esc(l.name || 'بدون اسم')} ${ctPill(l.clientType)}${isTodayL ? '<span class="newbadge">جديد النهارده</span>' : ''}</b><span class="pill" style="--c:${st.color}">${st.label}</span></div>
     <div class="lead-sub">${esc(sub || l.phone)}</div>
     <div class="lead-meta">${isAdmin() ? `<span>${l.assignedTo ? 'مع ' + esc(userName(l.assignedTo)) : '<b style="color:var(--accent)">مش متوزع</b>'}</span>` : ''}
       <span>آخر تواصل: ${ago(l.lastContactAt)}</span>${due ? `<span class="due ${due.cls}">${due.txt}</span>` : ''}${isLateFirst(l) ? `<span class="due late">⚠️ عدّى ${hoursTxt(cfg('firstContactHours'))} من غير تواصل</span>` : ''}</div>
     ${leadTags(l)}
+    ${isLeadK(l) && (isAdmin() || isLeader()) ? leadWho(l) : ''}
   </button>`;
 }
 function leadsView(){
@@ -2405,8 +2555,16 @@ function leadsView(){
 function listHTML(){
   const list = filteredLeads();
   if(!list.length) return `<div class="empty">مفيش عملاء هنا</div>`;
+  const kind = S.f.kind || 'lead';
+  let body;
+  if(kind === 'lead'){   // الليدز متقسمة: النهارده فوق، وبعدها امبارح، وبعدها الأقدم
+    const t0 = startOfDay(), y0 = t0 - DAY, shown = list.slice(0, S.limit);
+    const grp = [['today', '🟢 ليدز النهارده', l => (l.createdAt || 0) >= t0], ['y', 'امبارح', l => (l.createdAt || 0) >= y0 && (l.createdAt || 0) < t0], ['old', 'الأقدم', l => (l.createdAt || 0) < y0]];
+    body = grp.map(([k, t, fn]) => { const g = shown.filter(fn); if(!g.length && k !== 'today') return '';
+      return `<div class="lsec ${k === 'today' ? 'today' : ''}">${t} <i>${list.filter(fn).length}</i></div>` + (g.length ? g.map(leadItem).join('') : '<div class="card muted" style="text-align:center;font-size:13px">لسه مفيش ليدز وصلت النهارده</div>'); }).join('');
+  }else body = list.slice(0, S.limit).map(leadItem).join('');
   return `<div class="muted" style="font-size:12.5px;margin-top:4px">${list.length} عميل</div>`
-    + list.slice(0, S.limit).map(leadItem).join('')
+    + body
     + (list.length > S.limit ? `<button class="more" onclick="App.more()">اعرض أكتر (${list.length - S.limit})</button>` : '');
 }
 
@@ -2495,7 +2653,7 @@ function leadSheet(l){
     ${isAdmin() ? `<div><span>مع مين</span>${esc(userName(l.assignedTo))}</div>` : ''}
     <div><span>آخر تواصل</span>${ago(l.lastContactAt)}</div>
     ${l.source ? `<div><span>المصدر</span>${esc(SOURCES[l.source] || l.source)}</div>` : ''}
-    ${l.source === 'broker' && (l.brokerName || l.brokerPhone) ? `<div><span>البروكر</span>${esc(l.brokerName || '')}${l.brokerPhone ? ` · <a href="tel:${esc(l.brokerPhone)}" dir="ltr" style="color:var(--navy)">${esc(l.brokerPhone)}</a>` : ''}</div>` : ''}
+    ${isBrokerL(l) && (l.brokerName || l.brokerPhone) ? `<div><span>البروكر</span>${esc(l.brokerName || '')}${l.brokerPhone ? ` · <a href="tel:${esc(l.brokerPhone)}" dir="ltr" style="color:var(--navy)">${esc(l.brokerPhone)}</a>` : ''}</div>` : ''}
     ${l.nextFollowUp && OPEN.has(l.status) ? `<div><span>${l.status === 'viewing' ? 'ميعاد المعاينة' : 'المتابعة الجاية'}</span><b class="due ${dueLabel(l.nextFollowUp).cls}">${fmt(l.nextFollowUp)}</b></div>` : ''}
     <div><span>عدد المكالمات</span>${l.callCount || 0}</div>
     ${extra.map(([k, v]) => `<div><span>${esc(k)}</span>${esc(v)}</div>`).join('')}
@@ -2505,7 +2663,7 @@ function leadSheet(l){
   <div class="card">
     <div class="row">
       <div><label class="f" style="margin-top:0">نوع العميل</label><select class="sel" id="lCt" style="margin:0" onchange="App.ctChange()"><option value="">—</option>${opts(CLIENT_TYPES, l.clientType)}</select></div>
-      <div><label class="f" style="margin-top:0">مصدر العميل</label><select class="sel" id="lSrc" style="margin:0" onchange="$('#lBrW').classList.toggle('hidden', this.value !== 'broker')"><option value="">—</option>${opts(SOURCES, l.source)}</select></div>
+      <div><label class="f" style="margin-top:0">مصدر العميل</label><select class="sel" id="lSrc" style="margin:0" onchange="brToggle('l')"><option value="">—</option>${opts(SOURCES, l.source)}</select></div>
     </div>
     ${brokerFields('l', l)}
     <div id="lFurnWrap" class="${['owner_rent', 'tenant'].includes(l.clientType) ? '' : 'hidden'}"><label class="f">الإيجار مفروش ولا فاضي؟</label>
@@ -2530,6 +2688,7 @@ function leadSheet(l){
   <h3>سجّل المكالمة</h3>
   <div class="card">
     <div class="st-grid">${CALL_STATUSES.map(k => `<label style="--c:${STATUSES[k].color}"><input type="radio" name="st" value="${k}" onchange="App.stChange()"><span style="--c:${STATUSES[k].color}">${STATUSES[k].label}</span></label>`).join('')}</div>
+    ${l.clientType === 'broker' ? '' : `<button type="button" class="btn ghost mini" style="margin-top:8px" onclick="$('#lCt').value='broker';App.ctChange();$('#lBrN').focus();toast('اكتب اسم البروكر / الشركة واحفظ بيانات العميل')">🤝 الرقم ده طلع بروكر</button>`}
     <label class="f">العميل قال إيه؟ اكتب أو سجّل فويس</label>
     <textarea class="in" id="note" placeholder="مثلاً: عايز 3 أوض، ميزانيته 5 مليون، طالب عرض تقسيط..."></textarea>
     <div class="voice-row">
@@ -2792,6 +2951,17 @@ const App = window.App = {
     try{ await store.signIn($('#lg').value, $('#pw').value); }
     catch(err){ S.authErr = fbError(err); render(); }
   },
+  // نسيت كلمة السر: الأدمن (إيميل حقيقي) بيوصله لينك على الإيميل — السيلز أسماء الدخول بتاعتهم مش إيميلات، فالأدمن بيعملهم كلمة سر جديدة من صفحة الفريق
+  async forgotPw(){
+    const v = (($('#lg') || {}).value || '').trim();
+    if(!v){ S.fpMsg = 'اكتب الإيميل أو اسم الدخول الأول، وبعدين دوس "نسيت كلمة السر؟"'; return render(); }
+    if(!v.includes('@') || v.toLowerCase().endsWith('@' + LOGIN_DOMAIN)){
+      S.fpMsg = '🔑 كلّم الأدمن أو مدير المبيعات، وهو يعملك كلمة سر جديدة من صفحة الفريق (زرار "كلمة سر جديدة").'; return render(); }
+    if(!store.resetPw){ S.fpMsg = 'دي نسخة تجريبية — مفيش كلمة سر تتغير.'; return render(); }
+    try{ await store.resetPw(v); S.fpMsg = `📧 بعتنا لينك تغيير كلمة السر على <b dir="ltr">${esc(v)}</b> — افتح الإيميل (وبص في Spam لو مش لاقيه)، واعمل كلمة سر جديدة وادخل بيها.`; }
+    catch(err){ S.fpMsg = /user-not-found|invalid-email/.test(err.code || '') ? 'الإيميل ده مش متسجل على السيستم' : fbError(err); }
+    render(); const el = $('#lg'); if(el) el.value = v;
+  },
   toggleReg(){ S.regMode = !S.regMode; S.authErr = ''; render(); },
   async register(e){
     e.preventDefault();
@@ -2898,6 +3068,9 @@ const App = window.App = {
         hist.voice = {id:v.id, n:v.n, dur:S.rec.dur, mime:S.rec.mime};
       }
       const patch = {status, lastContactAt:now, nextFollowUp:fu, callCount:(l.callCount || 0) + 1};
+      // لو غيّر نوع العميل (مثلاً طلع بروكر) قبل ما يحفظ المكالمة، يتحفظ معاها
+      const ctNow = ($('#lCt') || {}).value || null;
+      if(ctNow !== (l.clientType || null)){ patch.clientType = ctNow; Object.assign(patch, brokerVal('l', ($('#lSrc') || {}).value, ctNow)); if(ctNow === 'broker') hist.note = (hist.note ? hist.note + '\n' : '') + '🤝 الرقم طلع بروكر' + (patch.brokerName ? ': ' + patch.brokerName : ''); }
       if(l.nudge && l.assignedTo === S.me.uid){ patch.nudge = null; hist.note = (hist.note ? hist.note + '\n' : '') + `(رد على تنبيه ${l.nudge.byName} بعد ${ago(l.nudge.at).replace('من ', '')})`; }
       await store.updateLeads([l.id], patch, hist);
       await store.addActivity({type:'call', at:now, by:S.me.uid, byName:S.me.name, leadId:l.id, leadName:l.name || '', status, note, voice:hist.voice || null, assignedTo:l.assignedTo || null, teamId:l.teamId || null});
@@ -2912,7 +3085,7 @@ const App = window.App = {
     if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = to ? `متأكد؟ حوّل لـ ${userName(to)}` : 'متأكد؟ شيله من السيلز'; return; }
     const now = Date.now(), note = `${S.me.name} حوّل ${l.name || 'عميل'} ${l.assignedTo ? 'من ' + userName(l.assignedTo) + ' ' : ''}لـ ${userName(to)}`;
     try{
-      await store.updateLeads([l.id], {assignedTo:to, assignedAt:to ? now : null, teamId:teamOf(to)}, {at:now, by:S.me.uid, byName:S.me.name, status:'assign', note});
+      await store.updateLeads([l.id], {assignedTo:to, assignedAt:to ? now : null, teamId:teamOf(to), assignedBy:to ? S.me.uid : null, assignedByName:to ? S.me.name : null}, {at:now, by:S.me.uid, byName:S.me.name, status:'assign', note});
       await store.addActivity({type:'assign', at:now, by:S.me.uid, byName:S.me.name, leadId:l.id, leadName:l.name || '', note, teamId:teamOf(to) || myTeam()});
       closeSheet(); toast('اتحوّل ✓');
     }catch(e){ toast(fbError(e)); }
@@ -2982,7 +3155,7 @@ const App = window.App = {
     plan.forEach((u, i) => { if(u) (groups[u] = groups[u] || []).push(list[i].id); });
     try{
       for(const [u, ids] of Object.entries(groups)){
-        await store.updateLeads(ids, {assignedTo:u, assignedAt:now, teamId:teamOf(u)}, {at:now, by:S.me.uid, byName:S.me.name, status:'assign', note:`اتوزع على ${userName(u)}`});
+        await store.updateLeads(ids, {assignedTo:u, assignedAt:now, teamId:teamOf(u), assignedBy:S.me.uid, assignedByName:S.me.name}, {at:now, by:S.me.uid, byName:S.me.name, status:'assign', note:`اتوزع على ${userName(u)}`});
       }
       await store.addActivity({type:'assign', at:now, by:S.me.uid, byName:S.me.name, note:`${S.me.name} وزّع ${sum} عميل: ` + Object.entries(groups).map(([u, ids]) => `${userName(u)} ${ids.length}`).join('، '), teamId:myTeam()});
       S.dist = null; toast('اتوزعوا ✓'); render();
@@ -3058,10 +3231,10 @@ Object.assign(App, {
     const done = () => toast('الرقم اتنسخ — افتح imo والصقه في البحث');
     try{ navigator.clipboard.writeText(intl).then(done, () => toast('رقم imo: ' + intl)); }catch(e){ toast('رقم imo: ' + intl); }
   },
-  ctChange(){ const v = $('#lCt').value; const w = $('#lFurnWrap'); if(w) w.classList.toggle('hidden', !['owner_rent', 'tenant'].includes(v)); },
+  ctChange(){ const v = $('#lCt').value; const w = $('#lFurnWrap'); if(w) w.classList.toggle('hidden', !['owner_rent', 'tenant'].includes(v)); brToggle('l'); },
   async saveInfo(){
     const l = leadById(S.openId); if(!l) return;
-    const patch = {clientType:$('#lCt').value || null, source:$('#lSrc').value || null, ...brokerVal('l', $('#lSrc').value), furnished:$('#lFurn') ? ($('#lFurn').value || null) : null};
+    const patch = {clientType:$('#lCt').value || null, source:$('#lSrc').value || null, ...brokerVal('l', $('#lSrc').value, $('#lCt').value), furnished:$('#lFurn') ? ($('#lFurn').value || null) : null};
     try{ await store.updateLeads([l.id], patch, null); toast('اتحفظت بيانات العميل ✓'); const nl = leadById(l.id); if(nl) openSheet(leadSheet({...nl, ...patch})); }
     catch(e){ toast(fbError(e)); }
   },
@@ -3082,6 +3255,7 @@ Object.assign(App, {
   },
   newLead(){ recCleanup(); S._reqMode = false; openSheet(newLeadSheet()); },
   newReq(){ recCleanup(); S._rqKind = 'rent'; openSheet(newReqSheet()); },
+  reqAutoKind(){ const k = kindFromText(($('#rqText') || {}).value); if(k && k !== S._rqKind) App.reqKind(k); },
   reqKind(k){ S._rqKind = k; $('#rkRent').className = k === 'rent' ? 'on data' : ''; $('#rkSale').className = k === 'sale' ? 'on data' : ''; },
   reqMic(){
     if(!SpeechRec) return;
@@ -3097,8 +3271,7 @@ Object.assign(App, {
     const text = ($('#rqText').value || '').trim();
     if(text.length < 5) return toast('اكتب الطلب الأول');
     const p = parseLeadText(text);
-    let kind = S._rqKind || 'rent';
-    if(p.ct === 'buyer' && !/ايجار|ياجر|rent/.test(AR_NORM(text))) kind = 'sale';
+    const kind = kindFromText(text) || S._rqKind || 'rent';
     const q = {}; ['cat', 'beds', 'budget', 'area', 'furn', 'proj'].forEach(k => { if(p[k] != null && p[k] !== '') q[k] = p[k]; });
     const id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const r = {text, kind, q, by:S.me.uid, byName:S.me.name, phone:staffInfo(S.me.uid).phone || '', at:Date.now(), active:true, teamId:teamOf(S.me.uid)};
@@ -3120,6 +3293,7 @@ Object.assign(App, {
     const v = $('#nlCt').value;
     $('#nlFurnW').classList.toggle('hidden', !['owner_rent', 'tenant'].includes(v));
     $('#nlReqW').classList.toggle('hidden', !['tenant', 'buyer'].includes(v));
+    brToggle('nl');
   },
   nlVoice(){
     if(!SpeechRec) return;
@@ -3157,8 +3331,9 @@ Object.assign(App, {
       budget:moneyNums($('#nlBud').value)[0] || null, area:parseInt(normNum($('#nlArea').value)) || null, at:now, by:S.me.uid, byName:S.me.name} : null;
     const hasRq = rq && (rq.cat || rq.beds || rq.budget || rq.area || S._reqMode);
     const lead = {name:$('#nlName').value.trim(), phone, project:$('#nlProj').value.trim(), unit:$('#nlUnit').value.trim(), extra:note ? {'ملاحظات':note} : {},
-      clientType:ct, source:$('#nlSrc').value || null, ...brokerVal('nl', $('#nlSrc').value), furnished:['owner_rent', 'tenant'].includes(ct) ? ($('#nlFurn').value || null) : null,
-      status:'new', assignedTo:to, teamId:teamOf(to), assignedAt:to ? now : null, createdAt:now, createdBy:S.me.uid,
+      clientType:ct, source:$('#nlSrc').value || null, ...brokerVal('nl', $('#nlSrc').value, ct), furnished:['owner_rent', 'tenant'].includes(ct) ? ($('#nlFurn').value || null) : null,
+      status:'new', assignedTo:to, teamId:teamOf(to), assignedAt:to ? now : null, createdAt:now, createdBy:S.me.uid, createdByName:S.me.name,
+      assignedBy:to ? S.me.uid : null, assignedByName:to ? S.me.name : null,
       lastContactAt:null, nextFollowUp:null, callCount:0, history:[], req:hasRq ? rq : null};
     const b = $('#nlBtn'); b.disabled = true; b.textContent = 'بيضيف...';
     try{
@@ -3212,17 +3387,18 @@ Object.assign(App, {
     // منع التكرار: لو الوحدة (أو رقم مالكها أو صورها) متسجلة قبل كده
     const ownerOk = !old || S._formOwnerOk;
     const okey = ownerOk ? (ownerKeyOf(owner.ownerPhone) || ownerKeyOf(owner.otherPhone)) : (old && old.ownerKey) || '';
-    if(ownerOk) data.ownerKey = okey;
-    const keyChanged = !old || projKey(old.project) !== projKey(data.project) || normNo(old.unitNo) !== normNo(data.unitNo) || (ownerOk && (old.ownerKey || '') !== okey);
-    const dup = keyChanged && !(old && old.dupApproved) ? findDupUnit(data, okey, old ? old.phHash : null, id) : null;
+    const nkey = ownerOk ? ownerNameKeyOf(owner.ownerName) : (old && old.ownerNameKey) || '';
+    if(ownerOk){ data.ownerKey = okey; data.ownerNameKey = nkey; }
+    const keyChanged = !old || projKey(old.project) !== projKey(data.project) || normNo(old.unitNo) !== normNo(data.unitNo) || (ownerOk && ((old.ownerKey || '') !== okey || (old.ownerNameKey || '') !== nkey));
+    const dup = keyChanged && !(old && old.dupApproved) ? findDupUnit(data, okey, nkey, id) : null;
     const box = $('#uDupBox');
     if(dup && !(old && old.pendingDup)){
       const sig = dup.u.id + '|' + dup.reason;
       if(S._dupAck !== sig){
         S._dupAck = sig;
-        if(box){ box.classList.remove('hidden'); box.innerHTML = `<b>⛔ الوحدة دي متسجلة قبل كده</b><div>${esc(dup.reason)}</div>
+        if(box){ box.classList.remove('hidden'); box.innerHTML = `<b>${dup.same ? '⛔ الوحدة دي متسجلة قبل كده' : '⚠️ المالك ده عنده وحدة تانية على السيستم'}</b><div>${esc(dup.reason)}</div>
           <div>سجّلها: <b>${esc(dup.u.agentName || userName(dup.u.createdBy))}</b>${dup.u.code ? ` · كود <span dir="ltr">${esc(dup.u.code)}</span>` : ''}${dup.u.createdAt ? ' · ' + new Date(dup.u.createdAt).toLocaleDateString('ar-EG') : ''}</div>
-          <div style="margin-top:6px">${isBoss() ? 'لو متأكد إنها تتسجل تاني، دوس حفظ مرة كمان.' : 'لو لازم تتسجل تاني، دوس "ابعتها للمدير يوافق" — مش هتظهر للباقي غير بعد موافقته.'}</div>`; box.scrollIntoView({block:'center'}); }
+          <div style="margin-top:6px">${isBoss() ? 'لو متأكد إنها تتسجل تاني، دوس حفظ مرة كمان.' : (dup.same ? 'لو لازم تتسجل تاني، دوس "ابعتها للمدير يوافق" — مش هتظهر للباقي غير بعد موافقته.' : 'لو دي وحدة مختلفة لنفس المالك، دوس "ابعتها للمدير يوافق" — الأدمن هيوصله إشعار ويوافق عليها.')}</div>`; box.scrollIntoView({block:'center'}); }
         const sb = $('#uSave'); if(sb) sb.textContent = isBoss() ? 'متكررة — دوس تاني للحفظ' : 'ابعتها للمدير يوافق';
         return;
       }
@@ -3233,6 +3409,7 @@ Object.assign(App, {
     const b = $('#uSave'); b.disabled = true; b.textContent = 'بيحفظ...';
     try{
       let uid = id;
+      Object.assign(data, upStamp());
       if(old){ await store.saveUnit(old.page, id, data); }
       else{
         uid = newUid();
@@ -3264,27 +3441,13 @@ Object.assign(App, {
     const hashes = [...(u.phHash || [])];
     for(const f of list){
       if(stEl()) stEl().textContent = `بيجهّز الصور ويحط اللوجو... ${done + 1} من ${list.length}`;
-      const h = await photoHash(f);
-      if(h && !u.dupApproved && !u.pendingDup){
-        const d = findDupUnit({}, '', [h], id);
-        if(d){
-          if(!isBoss()){
-            await store.saveUnit(u.page, id, {pendingDup:dupInfo(d), phHash:[...hashes, h]}).catch(() => {});
-            await store.addActivity({type:'upload', at:Date.now(), by:S.me.uid, byName:S.me.name, note:`⏳ صور متكررة على وحدة ${u.code || ''} — نفس صور وحدة ${d.u.code || ''} مع ${d.u.agentName || ''}`, teamId:u.teamId || myTeam()}).catch(() => {});
-            toast(`⛔ الصورة دي مرفوعة قبل كده على وحدة مع ${d.u.agentName || 'حد تاني'} — الوحدة اتبعتت للمدير يوافق`);
-            if(stEl()) stEl().textContent = '';
-            setTimeout(() => { if(S.openUnitId === id) App.openUnit(id); }, 300);
-            return;
-          }
-          toast(`⚠️ الصورة دي شبه صورة على وحدة ${d.u.code || ''} مع ${d.u.agentName || ''}`);
-        }
-      }
+      const h = '';   // الصور مبقتش بتتحسب تكرار (شقق نفس الكمبوند صورها شبه بعض)
       try{
         const b64 = await processPhoto(f);
         const pid = await store.savePhoto(b64, {unitId:id, by:S.me.uid, at:Date.now()});
         S.photoCache[pid] = 'data:image/jpeg;base64,' + b64;
         await store.addUnitPhoto(u.page, id, pid);
-        if(h){ hashes.push(h); await store.saveUnit(u.page, id, {phHash:hashes.slice(-30)}).catch(() => {}); }
+        await store.saveUnit(u.page, id, upStamp('ضاف صور')).catch(() => {});
         done++;
       }catch(e){ toast('صورة مترفعتش: ' + fbError(e)); }
     }
@@ -3384,7 +3547,7 @@ Object.assign(App, {
       if(p.acc > 150 && b && !b.dataset.sure){ b.dataset.sure = 1; b.disabled = false; b.textContent = `الدقة ضعيفة (${p.acc}م) — دوس تاني للحفظ`; S._pendingLoc = p; return; }
       const loc = {...(S._pendingLoc && b && b.dataset.sure ? S._pendingLoc : p), at:Date.now(), by:S.me.uid, byName:S.me.name};
       S._pendingLoc = null;
-      await store.saveUnit(u.page, id, {loc});
+      await store.saveUnit(u.page, id, {loc, ...upStamp('حدّث اللوكيشن')});
       toast('اتسجل اللوكيشن ✓'); setTimeout(() => App.openUnit(id), 150);
     }catch(e){ toast(e.message || fbError(e)); if(b){ b.disabled = false; b.textContent = 'خد اللوكيشن من مكاني'; } }
   },
@@ -3403,7 +3566,7 @@ Object.assign(App, {
     const u = unitById(id); if(!u || !canEditUnit(u)) return;
     openLocPicker(u.loc, async p => {
       const loc = {...p, at:Date.now(), by:S.me.uid, byName:S.me.name, manual:true};
-      await store.saveUnit(u.page, id, {loc}); toast('اتسجل اللوكيشن ✓'); setTimeout(() => App.openUnit(id), 150);
+      await store.saveUnit(u.page, id, {loc, ...upStamp('حدّث اللوكيشن')}); toast('اتسجل اللوكيشن ✓'); setTimeout(() => App.openUnit(id), 150);
     });
   },
   formLocPick(){
@@ -3488,7 +3651,9 @@ Object.assign(App, {
       ${SpeechRec ? `<button type="button" class="btn ghost mini" style="margin-top:6px" id="repMic" onclick="App.repMic()">🎤 اتكلم ويتكتب</button>` : ''}
       <label class="f">خطة بكرة (اختياري)</label>
       <textarea class="in" id="repPlan" style="min-height:60px">${esc(r ? r.plan || '' : '')}</textarea>
-      <button class="btn block" style="margin-top:14px" id="repBtn" onclick="App.repSubmit()">${r ? 'تحديث التقرير' : 'ابعت التقرير'}</button>`);
+      <button class="btn block" style="margin-top:14px" id="repBtn" onclick="App.repSubmit()">${r ? 'تحديث التقرير' : 'ابعت التقرير'}</button>
+      ${repRepliesHTML(r)}`);
+    if(r) App.repSeen(r);
   },
   repMic(){
     if(!SpeechRec) return;
@@ -3521,8 +3686,27 @@ Object.assign(App, {
         : `<div class="card repcard late" style="margin-top:10px"><b>${day === dayKey() && Date.now() < reportDeadline() ? `لسه مبعتش — الميعاد الساعة ${RH()}` : '⚠️ مبعتش تقرير اليوم ده'}</b></div>`}
       <div class="card" style="margin-top:10px;font-size:13.5px;line-height:1.9"><b>الأرقام</b><div>${statsLine(st)}</div></div>
       ${r ? `<h3>عمل إيه</h3><div class="card" style="white-space:pre-wrap;font-size:14px">${esc(r.text)}</div>${r.plan ? `<h3>خطة بكرة</h3><div class="card" style="white-space:pre-wrap;font-size:14px">${esc(r.plan)}</div>` : ''}` : ''}
+      ${repRepliesHTML(r)}
+      ${r && canReplyRep(uid) ? `<h3>💬 رد على التقرير</h3>
+        <div class="chips" style="padding:0;flex-wrap:wrap">${REP_QUICK.map(t => `<button type="button" class="chip" onclick="$('#repRe').value='${t}'">${t}</button>`).join('')}</div>
+        <textarea class="in" id="repRe" style="min-height:70px;margin-top:6px" placeholder="اكتب ردك أو تعليقك — هيوصله إشعار بصوت"></textarea>
+        <button class="btn block" style="margin-top:8px" id="repReBtn" onclick="App.repReply('${uid}', '${day}')">ابعت الرد</button>` : ''}
       <button class="btn ghost block" style="margin-top:12px" onclick="App.close();App.bySales('${uid}')">شوف عملاؤه</button>`);
   },
+  async repReply(uid, day){
+    const text = ($('#repRe').value || '').trim(); if(!text) return toast('اكتب الرد الأول');
+    if(!canReplyRep(uid)) return toast('مش مسموحلك ترد على التقرير ده');
+    const id = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const x = {by:S.me.uid, byName:S.me.name, role:S.me.role, text, at:Date.now()};
+    const b = $('#repReBtn'); b.disabled = true; b.textContent = 'بيبعت...';
+    try{
+      await store.setMeta(REPORT_DOC + day.slice(0, 7), {reports:{[day]:{[uid]:{replies:{[id]:x}}}}});
+      const rr = reportOf(uid, day); if(rr){ rr.replies = {...(rr.replies || {}), [id]:x}; }
+      await store.addActivity({type:'report', at:x.at, by:S.me.uid, byName:S.me.name, note:`💬 ${S.me.name} ردّ على تقرير ${userName(uid)}: ${text}`, teamId:teamOf(uid)}).catch(() => {});
+      toast('اتبعت الرد ✓'); App.viewRep(uid, day);
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'ابعت الرد'; }
+  },
+  repSeen(r){ try{ localStorage.setItem('blueRepSeen', String(Math.max(...repReplies(r).map(x => x.at), +localStorage.getItem('blueRepSeen') || 0))); }catch(e){} },
   /* ماركت بليس */
   mpSheet(id){
     const u = unitById(id); if(!u) return;
@@ -3594,12 +3778,12 @@ Object.assign(App, {
     const u = unitById(id); if(!u) return;
     const b = $('#hotBtn'); b.disabled = true;
     try{
-      await store.saveUnit(u.page, id, {hot:{at:Date.now(), by:S.me.uid, byName:S.me.name, note:$('#hotNote').value.trim()}});
+      await store.saveUnit(u.page, id, {hot:{at:Date.now(), by:S.me.uid, byName:S.me.name, note:$('#hotNote').value.trim()}, ...upStamp('عملها هوت ديل')});
       await store.addActivity({type:'upload', at:Date.now(), by:S.me.uid, byName:S.me.name, note:`🔥 هوت ديل: ${[u.type, u.project, u.price].filter(Boolean).join(' · ')}`, teamId:u.teamId || myTeam()}).catch(() => {});
       toast('🔥 بقت هوت ديل'); setTimeout(() => App.openUnit(id), 150);
     }catch(e){ toast(fbError(e)); b.disabled = false; }
   },
-  async hotOff(id){ const u = unitById(id); if(!u) return; try{ await store.saveUnit(u.page, id, {hot:null}); toast('اتشالت من الهوت ديل'); setTimeout(() => App.openUnit(id), 150); }catch(e){ toast(fbError(e)); } },
+  async hotOff(id){ const u = unitById(id); if(!u) return; try{ await store.saveUnit(u.page, id, {hot:null, ...upStamp('شالها من الهوت ديل')}); toast('اتشالت من الهوت ديل'); setTimeout(() => App.openUnit(id), 150); }catch(e){ toast(fbError(e)); } },
   /* موافقة المدير على الوحدة المتكررة */
   async approveDup(id){
     const u = unitById(id); if(!u || !isBoss()) return;
@@ -3848,7 +4032,7 @@ Object.assign(App, {
       const teamId = agentId ? teamOf(agentId) : null;
       const {_owner, agentRaw, ...rest} = x;
       units.push({...rest, id, code:rest.code || ('BL-' + (now + i).toString(36).toUpperCase().slice(-6)), agentId, agentName:au ? au.name : agentRaw, teamId,
-        ownerKey:ownerKeyOf(_owner.ownerPhone) || ownerKeyOf(_owner.otherPhone),
+        ownerKey:ownerKeyOf(_owner.ownerPhone) || ownerKeyOf(_owner.otherPhone), ownerNameKey:ownerNameKeyOf(_owner.ownerName),
         status:'available', availableFrom:null, photos:[], notes:'', createdAt:now, createdBy:S.me.uid, src:S.inv.fileName});
       owners.push({id, data:{..._owner, agentId, teamId, unitId:id}});
     });
@@ -3872,7 +4056,7 @@ setInterval(() => {
   if(ALERT_PREV && S.me.uid === ALERT_PREV.uid){
     if(now.late > ALERT_PREV.late){ toast(`⚠️ عميل عدّى عليه ${hoursTxt(cfg('firstContactHours'))} من غير تواصل`); beep('late'); }
     else if(now.rep > ALERT_PREV.rep){ toast(`📝 عدّى ميعاد التقرير (${RH()}) — ابعته دلوقتي`); beep('late'); }
-    else if(now.pend > ALERT_PREV.pend){ toast('⏳ وحدة متكررة جديدة مستنية موافقتك'); beep('info'); }
+    else if(now.pend > ALERT_PREV.pend){ toast('⏳ وحدة جديدة مستنية موافقتك (متكررة أو لمالك عنده وحدة تانية)'); beep('info'); }
     else if(now.soon > ALERT_PREV.soon){ toast('🏠 وحدة متأجرة قرب ميعاد فضيانها'); beep('info'); }
   }
   ALERT_PREV = {...now, uid:S.me.uid};
