@@ -239,6 +239,14 @@ label.chk input{width:20px;height:20px;accent-color:var(--ok)}
 .reel-box .btn.ghost{background:rgba(255,255,255,.12);color:#fff}
 .reel-script{min-height:140px;font-size:18px;line-height:1.9}
 .btn.mini.on{outline:3px solid #36C5F0;outline-offset:2px}
+.reel-opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.reel-opts>*{flex:0 0 auto;max-width:100%}
+.reel-seg{flex-wrap:wrap}
+.sheet{overflow-x:hidden}
+.reel-box,.reel-done{max-width:100%;box-sizing:border-box}
+.sheet textarea,.sheet input.in{max-width:100%;box-sizing:border-box}
+.scbtns{gap:5px}
+.scbtns .btn.mini{flex:1 1 0;min-width:0;padding:6px 3px;font-size:11.5px;gap:2px;overflow:hidden;text-overflow:ellipsis}
 .reel-done{margin-top:10px;border-color:#9FDCC0;background:#F0FBF5;color:#0F172A}
 .reel-done video{display:block;width:100%;max-width:270px;aspect-ratio:9/16;margin:10px auto;border-radius:16px;background:#000}
 .src-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:4px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13px;text-align:center}
@@ -2383,7 +2391,7 @@ function hotStrip(){
       <div class="muted" style="font-size:12px">${esc([u.bedrooms && (u.bedrooms + ' غرف'), u.bua && (adClean(u.bua) + ' م²'), FURNISH[u.furnished]].filter(Boolean).join(' · '))}</div>
       ${u.hot.note ? `<div style="font-size:12px;color:#9A3412;margin-top:2px">${esc(u.hot.note)}</div>` : ''}
     </button>
-    <div class="row" style="margin-top:6px"><button class="btn mini" onclick="App.adSheet('${u.id}')">📣 إعلان</button><button class="btn mini" style="background:#1877F2" onclick="App.mpSheet('${u.id}')">🛒 ماركت</button><button class="btn mini" onclick="App.reelSheet('${u.id}')">🎬 ريل</button></div>
+    <div class="row scbtns" style="margin-top:6px"><button class="btn mini" onclick="App.adSheet('${u.id}')">📣 إعلان</button><button class="btn mini" style="background:#1877F2" onclick="App.mpSheet('${u.id}')">🛒 ماركت</button><button class="btn mini" onclick="App.reelSheet('${u.id}')">🎬 ريل</button></div>
   </div>`).join('')}</div></div>`;
 }
 /* ---------------- التقرير اليومي (لازم يتبعت قبل الميعاد اللي الأدمن بيحدده) ---------------- */
@@ -3069,7 +3077,7 @@ const REEL_FL = {
   lux:{n:'سينما فخم', l:[['soft-light', '#0E2A5A', .55], ['multiply', '#C9D6EA', .16]]}
 };
 function reelPrefs(){ try{ return JSON.parse(localStorage.getItem('blue_reel_prefs') || '{}') || {}; }catch(e){ return {}; } }
-function reelSavePrefs(R){ try{ localStorage.setItem('blue_reel_prefs', JSON.stringify({font:R.font, tstyle:R.tstyle, anim:R.anim, filter:R.filter, spec:R.spec, duck:R.duck})); }catch(e){} }
+function reelSavePrefs(R){ try{ localStorage.setItem('blue_reel_prefs', JSON.stringify({mood:R.mood, font:R.font, tstyle:R.tstyle, anim:R.anim, filter:R.filter, spec:R.spec, duck:R.duck})); }catch(e){} }
 function reelFontsLink(){
   if(document.getElementById('rlFonts')) return; const l = document.createElement('link'); l.id = 'rlFonts'; l.rel = 'stylesheet';
   l.href = 'https://fonts.googleapis.com/css2?family=Tajawal:wght@500;800&family=Almarai:wght@700;800&family=Changa:wght@600;800&family=El+Messiri:wght@600;700&family=Reem+Kufi:wght@600;700&family=Lalezar&family=Marhey:wght@600;700&display=swap';
@@ -3170,21 +3178,73 @@ function reelWav(data, sr){
   for(let i = 0; i < data.length; i++){ const s = Math.max(-1, Math.min(1, data[i])); v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true); }
   return new Blob([b], {type:'audio/wav'});
 }
+const REEL_MUSIC = [
+  ['calm', 'هادية'], ['lux', 'فخمة'], ['upbeat', 'حماسية 1'], ['pop', 'حماسية 2 · بوب'], ['house', 'حماسية 3 · دانس'],
+  ['trap', 'حماسية 4 · تراب'], ['sharqi', 'حماسية 5 · شرقي'], ['drive', 'حماسية 6 · سريعة'], ['none', 'من غير']
+];
+const REEL_MP = {
+  calm:{bpm:84, prog:[[57,60,64],[53,57,60],[48,52,55],[55,59,62]], arp:8, arpW:'triangle', arpV:.04, lp:1500},
+  lux:{bpm:68, prog:[[57,60,64,67],[53,57,60,64],[50,53,57,60],[52,56,59,62]], arp:6, arpW:'sine', arpV:.06, lp:1500},
+  upbeat:{bpm:116, prog:[[57,60,64],[53,57,60],[48,52,55],[55,59,62]], arp:8, arpW:'triangle', arpV:.06, lp:2600, kick:'4', hat:'off'},
+  pop:{bpm:120, prog:[[60,64,67],[55,59,62],[57,60,64],[53,57,60]], arp:8, arpW:'square', arpV:.035, lp:3200, kick:'4', clap:1, hat:'8', bass:'8', padV:.035},
+  house:{bpm:124, prog:[[57,60,64],[57,60,64],[53,57,60],[55,59,62]], arp:0, stab:1, lp:3400, kick:'4', clap:1, hat:'off', bass:'off', padV:.02},
+  trap:{bpm:140, prog:[[57,60,64],[53,57,60],[52,55,59],[52,56,59]], arp:6, arpW:'sine', arpV:.07, lp:2400, kick:'trap', snare:'half', hat:'trap', b808:1, padV:.04},
+  sharqi:{bpm:108, prog:[[62,66,69],[62,66,69],[67,70,74],[62,66,69]], arp:0, mel:[62,63,66,67,69,70,72,74], lp:2600, darbuka:1, hat:'8s', bass:'root', padV:.03},
+  drive:{bpm:132, prog:[[52,55,59],[48,52,55],[55,59,62],[50,54,57]], arp:16, arpW:'sawtooth', arpV:.025, lp:2800, kick:'4', snare:'24', hat:'8', bass:'16', padV:.03}
+};
 function reelSynth(ac, out, t0, total, mood){
-  const bpm = {calm:84, upbeat:116, lux:68}[mood] || 84, beat = 60 / bpm, bar = beat * 4;
-  const prog = mood === 'lux' ? [[57,60,64,67],[53,57,60,64],[50,53,57,60],[52,56,59,62]] : [[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
-  const hz = m => 440 * Math.pow(2, (m - 69) / 12), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = mood === 'upbeat' ? 2600 : 1500; lp.connect(out);
-  const note = (m, s, len, type, vol, att) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = hz(m); const e = ac.createGain();
-    e.gain.setValueAtTime(0, s); e.gain.linearRampToValueAtTime(vol, s + att); e.gain.exponentialRampToValueAtTime(.0001, s + len); o.connect(e); e.connect(lp); o.start(s); o.stop(s + len + .05); };
-  let nz = null; if(mood === 'upbeat'){ nz = ac.createBuffer(1, Math.floor(ac.sampleRate * .06), ac.sampleRate); const dd = nz.getChannelData(0); for(let i = 0; i < dd.length; i++) dd[i] = Math.random() * 2 - 1; }
-  const kick = t => { const o = ac.createOscillator(), e = ac.createGain(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + .12);
-    e.gain.setValueAtTime(.5, t); e.gain.exponentialRampToValueAtTime(.001, t + .3); o.connect(e); e.connect(out); o.start(t); o.stop(t + .32); };
-  const hat = t => { const s = ac.createBufferSource(); s.buffer = nz; const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000; const e = ac.createGain();
-    e.gain.setValueAtTime(.1, t); e.gain.exponentialRampToValueAtTime(.001, t + .05); s.connect(f); f.connect(e); e.connect(out); s.start(t); };
-  for(let b = 0; b * bar < total; b++){ const s = t0 + b * bar, ch = prog[b % 4];
-    ch.forEach(m => note(m, s, bar * 1.05, 'triangle', .045, .35)); note(ch[0] - 12, s, bar, 'sine', .15, .05);
-    const st = mood === 'lux' ? 6 : 8; for(let i = 0; i < st; i++){ const nt = s + i * bar / st; if(nt > t0 + total) break; note(ch[i % ch.length] + 12, nt, .45, mood === 'lux' ? 'sine' : 'triangle', mood === 'calm' ? .04 : .06, .01); }
-    if(mood === 'upbeat') for(let i = 0; i < 4; i++){ kick(s + i * beat); hat(s + i * beat + beat / 2); } }
+  const P = REEL_MP[mood]; if(!P) return;
+  const beat = 60 / P.bpm, bar = beat * 4, end = t0 + total;
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = P.lp; lp.connect(out);
+  const nz = ac.createBuffer(1, Math.floor(ac.sampleRate * .5), ac.sampleRate), nd = nz.getChannelData(0); for(let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  const note = (m, s, len, type, vol, att, dst = lp) => { if(s > end) return; const o = ac.createOscillator(); o.type = type; o.frequency.value = hz(m); const e = ac.createGain();
+    e.gain.setValueAtTime(0, s); e.gain.linearRampToValueAtTime(vol, s + att); e.gain.exponentialRampToValueAtTime(.0001, s + len); o.connect(e); e.connect(dst); o.start(s); o.stop(s + len + .05); };
+  const noise = (s, len, vol, type, f, q = 1) => { if(s > end) return; const src = ac.createBufferSource(); src.buffer = nz; const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+    const e = ac.createGain(); e.gain.setValueAtTime(vol, s); e.gain.exponentialRampToValueAtTime(.001, s + len); src.connect(fl); fl.connect(e); e.connect(out); src.start(s); src.stop(s + len + .02); };
+  const kick = (t, v = .55) => { if(t > end) return; const o = ac.createOscillator(), e = ac.createGain(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(45, t + .12);
+    e.gain.setValueAtTime(v, t); e.gain.exponentialRampToValueAtTime(.001, t + .32); o.connect(e); e.connect(out); o.start(t); o.stop(t + .35); };
+  const hat = (t, v = .09) => noise(t, .05, v, 'highpass', 7500);
+  const snare = t => { noise(t, .18, .28, 'bandpass', 1800, .7); note(55, t, .12, 'triangle', .12, .002, out); };
+  const clap = t => { [0, .012, .024].forEach(d => noise(t + d, .12, .22, 'bandpass', 1500, 1.2)); };
+  const b808 = (m, t, len) => { if(t > end) return; const o = ac.createOscillator(), e = ac.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(hz(m) * 1.5, t); o.frequency.exponentialRampToValueAtTime(hz(m), t + .06);
+    e.gain.setValueAtTime(.32, t); e.gain.exponentialRampToValueAtTime(.001, t + len); o.connect(e); e.connect(out); o.start(t); o.stop(t + len + .05); };
+  const dum = t => { if(t > end) return; const o = ac.createOscillator(), e = ac.createGain(); o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(70, t + .15);
+    e.gain.setValueAtTime(.5, t); e.gain.exponentialRampToValueAtTime(.001, t + .35); o.connect(e); e.connect(out); o.start(t); o.stop(t + .4); };
+  const tak = (t, v = .2) => { noise(t, .07, v, 'bandpass', 3200, 2); note(81, t, .06, 'triangle', v * .4, .001, out); };
+  for(let b = 0; b * bar < total; b++){
+    const s = t0 + b * bar, ch = P.prog[b % 4], root = ch[0];
+    ch.forEach(m => note(m, s, bar * 1.05, 'triangle', P.padV || .045, .35));
+    if(!P.bass && !P.b808) note(root - 12, s, bar, 'sine', .15, .05);
+    if(P.arp){ for(let i = 0; i < P.arp; i++){ const nt = s + i * bar / P.arp; note(ch[i % ch.length] + 12, nt, P.arp > 8 ? .2 : .45, P.arpW, P.arpV, .01); } }
+    if(P.stab) for(let i = 0; i < 4; i++) ch.forEach(m => note(m + 12, s + i * beat + beat / 2, .22, 'sawtooth', .03, .005));
+    if(P.mel){ const M = P.mel, pat = b % 2 ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 3, 2, 1];
+      pat.forEach((k, i) => note(M[k] + 12, s + i * beat / 2, beat * .45, 'sawtooth', .035, .01)); }
+    for(let i = 0; i < 4; i++){
+      const bt = s + i * beat;
+      if(P.kick === '4') kick(bt);
+      if(P.clap && (i === 1 || i === 3)) clap(bt);
+      if(P.snare === '24' && (i === 1 || i === 3)) snare(bt);
+      if(P.hat === 'off') hat(bt + beat / 2);
+      if(P.hat === '8'){ hat(bt, .06); hat(bt + beat / 2); }
+      if(P.hat === '8s'){ hat(bt, .04); hat(bt + beat / 2, .05); }
+      if(P.hat === 'trap'){ const n = i === 3 ? 8 : 4; for(let j = 0; j < n; j++) hat(bt + j * beat / n, .06); }
+      if(P.bass === '8'){ note(root - 24, bt, beat * .45, 'sawtooth', .07, .005); note(root - 24, bt + beat / 2, beat * .45, 'sawtooth', .07, .005); }
+      if(P.bass === 'off') note(root - 24, bt + beat / 2, beat * .4, 'sawtooth', .09, .005);
+      if(P.bass === '16') for(let j = 0; j < 4; j++) note(root - 24, bt + j * beat / 4, beat * .22, 'sawtooth', .06, .003);
+    }
+    if(P.bass === 'root') note(root - 24, s, beat * 1.8, 'triangle', .14, .01);
+    if(P.kick === 'trap'){ kick(s); kick(s + beat * .75, .45); kick(s + beat * 2.5, .5); }
+    if(P.snare === 'half') snare(s + beat * 2);
+    if(P.b808){ b808(root - 24, s, beat * 1.5); b808(root - 24, s + beat * 2.5, beat * 1.2); }
+    if(P.darbuka){ const e8 = beat / 2; dum(s); tak(s + e8); tak(s + 3 * e8); dum(s + 4 * e8); tak(s + 6 * e8); tak(s + 7 * e8, .1); }
+  }
+}
+// الآيفون بيكتم صوت الصفحة لو زرار الصامت مقفول — ده بيخلي المزيكا تشتغل برضه
+let _rlSil = null;
+function reelAudioUnlock(){
+  try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
+  try{ if(!_rlSil){ _rlSil = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); _rlSil.loop = true; _rlSil.setAttribute('playsinline', ''); }
+    _rlSil.play().catch(() => {}); }catch(e){}
 }
 function reelMime(){
   if(!window.MediaRecorder) return '';
@@ -3307,6 +3367,8 @@ function reelStill(){
   const d = $('#rlDur'); if(d) d.textContent = `مدة الريل: ${Math.round(tl.total)} ثانية · ${R.items.length} ${R.items.length > 10 ? 'صورة/فيديو' : 'صور/فيديو'}${R.voice ? ' · بصوتك' : ' · من غير صوت لسه'}`;
 }
 function reelCleanup(){
+  if(S._rlTaste){ try{ S._rlTaste.close(); }catch(e){} S._rlTaste = null; }
+  if(_rlSil){ try{ _rlSil.pause(); }catch(e){} }
   const R = S.reel; if(!R) return;
   if(R.run) R.run.stop(true);
   if(R.mic){ try{ R.mic.discard = true; if(R.mic.mr.state === 'recording') R.mic.mr.stop(); }catch(e){} R.mic.stream.getTracks().forEach(t => t.stop()); clearInterval(R.mic.timer); }
@@ -3324,7 +3386,7 @@ function reelVoiceHTML(){
 }
 function reelRenderVoice(){ const el = $('#rlVoice'); if(el) el.innerHTML = reelVoiceHTML(); }
 function reelSheetHTML(u){
-  const R = S.reel, w = R.w, moods = [['calm', 'هادية'], ['upbeat', 'حماسية'], ['lux', 'فخمة'], ['none', 'من غير']];
+  const R = S.reel, w = R.w, moods = REEL_MUSIC;
   const opt = (k, v, t, st = '') => `<button type="button" class="btn mini ${R[k] === v ? 'on' : 'ghost'}" data-k="${k}" data-v="${esc(v)}" style="${st}" onclick="App.reelOpt('${k}', '${v}')">${t}</button>`;
   return `<div class="sheet-h"><div><h2>🎬 ريل الوحدة</h2><span class="muted" dir="ltr">${esc(u.code || '')}</span></div><button class="x" onclick="App.close()">×</button></div>
   <div class="reel-box">
@@ -3350,18 +3412,18 @@ function reelSheetHTML(u){
 
   <h3>شكل الكتابة</h3>
   <label class="f">طريقة العرض</label>
-  <div class="row">${Object.entries(REEL_TS).map(([k, o]) => opt('tstyle', k, o.n, o.bg ? `background:${o.bg};color:${o.fg};${o.bd ? 'border:2px solid ' + o.bd : ''}` : 'background:repeating-linear-gradient(45deg,#cbd5e1 0 6px,#e2e8f0 6px 12px);color:#fff;text-shadow:0 1px 4px #000')).join('')}</div>
+  <div class="reel-opts">${Object.entries(REEL_TS).map(([k, o]) => opt('tstyle', k, o.n, o.bg ? `background:${o.bg};color:${o.fg};${o.bd ? 'border:2px solid ' + o.bd : ''}` : 'background:repeating-linear-gradient(45deg,#cbd5e1 0 6px,#e2e8f0 6px 12px);color:#fff;text-shadow:0 1px 4px #000')).join('')}</div>
   <label class="f">الخط</label>
-  <div class="row">${REEL_FONTS.map(([f, n]) => opt('font', f, n, `font-family:'${f}',Cairo;font-size:15px`)).join('')}</div>
+  <div class="reel-opts">${REEL_FONTS.map(([f, n]) => opt('font', f, n, `font-family:'${f}',Cairo;font-size:15px`)).join('')}</div>
   <label class="f">حركة الكتابة</label>
-  <div class="row">${REEL_ANIM.map(([k, n]) => opt('anim', k, n)).join('')}</div>
+  <div class="reel-opts">${REEL_ANIM.map(([k, n]) => opt('anim', k, n)).join('')}</div>
 
   <h3>ألوان الصور</h3>
-  <div class="row">${Object.entries(REEL_FL).map(([k, o]) => opt('filter', k, o.n)).join('')}</div>
+  <div class="reel-opts">${Object.entries(REEL_FL).map(([k, o]) => opt('filter', k, o.n)).join('')}</div>
   <label class="chk"><input type="checkbox" ${R.spec ? 'checked' : ''} onchange="App.reelOpt('spec', this.checked)"> لقطة للمساحة والسعر بخط كبير قبل النهاية</label>
 
   <h3>الموسيقى</h3>
-  <div class="row" id="rlMood">${moods.map(([k, t]) => `<button type="button" class="btn mini ${R.mood === k ? '' : 'ghost'}" data-m="${k}" onclick="App.reelMood('${k}')">${t}</button>`).join('')}</div>
+  <div class="reel-opts" id="rlMood">${moods.map(([k, t]) => `<button type="button" class="btn mini ${R.mood === k ? 'on' : 'ghost'}" data-m="${k}" onclick="App.reelMood('${k}')">${t}</button>`).join('')}</div>
   <label class="chk"><input type="checkbox" ${R.duck ? 'checked' : ''} onchange="App.reelOpt('duck', this.checked)"> المزيكا توطى وانت بتتكلم وتعلى بعد ما تخلص</label>
 
   <h3>صور أو فيديو زيادة</h3>
@@ -3951,7 +4013,7 @@ Object.assign(App, {
     const u = unitById(id); if(!u) return;
     recCleanup(); reelCleanup();
     const P = reelPrefs(); reelFontsLink();
-    const R = S.reel = {u, id, items:[], n:0, w:reelWrite(u, 0), mood:'calm', at:'mid', voice:null, logo:null, avatar:null,
+    const R = S.reel = {u, id, items:[], n:0, w:reelWrite(u, 0), mood:REEL_MUSIC.some(m => m[0] === P.mood) ? P.mood : 'calm', at:'mid', voice:null, logo:null, avatar:null,
       font:REEL_FONTS.some(f => f[0] === P.font) ? P.font : 'Cairo', tstyle:REEL_TS[P.tstyle] ? P.tstyle : 'navy',
       anim:REEL_ANIM.some(a => a[0] === P.anim) ? P.anim : 'slide', filter:REEL_FL[P.filter] ? P.filter : 'natural', spec:P.spec !== false, duck:P.duck !== false};
     openSheet(reelSheetHTML(u)); S.openUnitId = id;
@@ -3982,7 +4044,19 @@ Object.assign(App, {
     if(k === 'font'){ try{ await Promise.all([document.fonts.load(`800 60px "${v}"`), document.fonts.load(`700 40px "${v}"`)]); }catch(e){} }
     reelStill();
   },
-  reelMood(k){ const R = S.reel; if(!R) return; R.mood = k; document.querySelectorAll('#rlMood button').forEach(b => b.classList.toggle('ghost', b.dataset.m !== k)); },
+  reelMood(k){
+    const R = S.reel; if(!R) return; R.mood = k; reelSavePrefs(R);
+    document.querySelectorAll('#rlMood button').forEach(b => { const on = b.dataset.m === k; b.classList.toggle('ghost', !on); b.classList.toggle('on', on); });
+    // عينة 6 ثواني عشان تسمع المزيكا قبل ما تختار
+    if(S._rlTaste){ try{ S._rlTaste.close(); }catch(e){} S._rlTaste = null; }
+    if(k === 'none' || R.run) return;
+    reelAudioUnlock();
+    const ac = S._rlTaste = new (window.AudioContext || window.webkitAudioContext)(); try{ ac.resume(); }catch(e){}
+    const g = ac.createGain(), t0 = ac.currentTime + .05; g.connect(ac.destination);
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(.7, t0 + .3); g.gain.setValueAtTime(.7, t0 + 5); g.gain.linearRampToValueAtTime(0, t0 + 6);
+    reelSynth(ac, g, t0, 6, k);
+    setTimeout(() => { if(S._rlTaste === ac){ try{ ac.close(); }catch(e){} S._rlTaste = null; } }, 6500);
+  },
   async reelFiles(files){
     const R = S.reel; if(!R) return; const st = m => { const e = $('#rlStatus'); if(e) e.textContent = m; };
     for(const f of [...files]){
@@ -4036,6 +4110,8 @@ Object.assign(App, {
     if(R.mic) return toast('خلّص التسجيل الأول');
     const cv = $('#rlCv'); if(!cv) return;
     if(record && (!cv.captureStream || !window.MediaRecorder)) return toast('المتصفح ده مش بيعرف يعمل فيديو — افتح الـ CRM من Safari أو Chrome محدّث');
+    if(S._rlTaste){ try{ S._rlTaste.close(); }catch(e){} S._rlTaste = null; }
+    reelAudioUnlock();
     const tl = reelBuild(), ac = new (window.AudioContext || window.webkitAudioContext)(); try{ await ac.resume(); }catch(e){}
     const mix = ac.createGain(); mix.connect(ac.destination); let dest = null;
     if(record){ dest = ac.createMediaStreamDestination(); mix.connect(dest); }
