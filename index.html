@@ -238,6 +238,7 @@ label.chk input{width:20px;height:20px;accent-color:var(--ok)}
 .reel-box .muted{color:#AFC0E4}
 .reel-box .btn.ghost{background:rgba(255,255,255,.12);color:#fff}
 .reel-script{min-height:140px;font-size:18px;line-height:1.9}
+.btn.mini.on{outline:3px solid #36C5F0;outline-offset:2px}
 .reel-done{margin-top:10px;border-color:#9FDCC0;background:#F0FBF5;color:#0F172A}
 .reel-done video{display:block;width:100%;max-width:270px;aspect-ratio:9/16;margin:10px auto;border-radius:16px;background:#000}
 .src-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:4px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13px;text-align:center}
@@ -3051,6 +3052,37 @@ function starWatch(){
    ===================================================================== */
 /* ---------------- الريل (فيديو الوحدة) ---------------- */
 const REEL_W = 1080, REEL_H = 1920, R_NAVY = '#0B2A5B', R_DEEP = '#061A47', R_ACC = '#36C5F0';
+// خيارات شكل الكتابة في الريل
+const REEL_FONTS = [['Cairo', 'كايرو'], ['Tajawal', 'تجوال'], ['Almarai', 'المراعي'], ['Changa', 'شانجا'], ['El Messiri', 'المسيري'], ['Reem Kufi', 'كوفي'], ['Lalezar', 'عريض'], ['Marhey', 'مرح']];
+const REEL_TS = {
+  clear:{n:'شفاف', bg:'', fg:'#fff'},
+  navy:{n:'نيفي', bg:'rgba(11,42,91,.92)', fg:'#fff'},
+  blue:{n:'أزرق', bg:'rgba(30,91,184,.93)', fg:'#fff'},
+  lux:{n:'فخم', bg:'rgba(10,10,12,.82)', fg:'#F3D27A', bd:'#D4AF37'},
+  white:{n:'أبيض', bg:'rgba(255,255,255,.95)', fg:'#0B2A5B'}
+};
+const REEL_ANIM = [['slide', 'ينزلق'], ['word', 'كلمة كلمة'], ['zoom', 'يكبر'], ['fade', 'يظهر بهدوء']];
+const REEL_FL = {
+  natural:{n:'طبيعي', l:null},
+  warm:{n:'دافي', l:[['soft-light', '#FF9A3C', .42], ['source-over', '#FFB15A', .05]]},
+  bright:{n:'مشرق', l:[['screen', '#ffffff', .1], ['soft-light', '#FFF3D6', .35]]},
+  lux:{n:'سينما فخم', l:[['soft-light', '#0E2A5A', .55], ['multiply', '#C9D6EA', .16]]}
+};
+function reelPrefs(){ try{ return JSON.parse(localStorage.getItem('blue_reel_prefs') || '{}') || {}; }catch(e){ return {}; } }
+function reelSavePrefs(R){ try{ localStorage.setItem('blue_reel_prefs', JSON.stringify({font:R.font, tstyle:R.tstyle, anim:R.anim, filter:R.filter, spec:R.spec, duck:R.duck})); }catch(e){} }
+function reelFontsLink(){
+  if(document.getElementById('rlFonts')) return; const l = document.createElement('link'); l.id = 'rlFonts'; l.rel = 'stylesheet';
+  l.href = 'https://fonts.googleapis.com/css2?family=Tajawal:wght@500;800&family=Almarai:wght@700;800&family=Changa:wght@600;800&family=El+Messiri:wght@600;700&family=Reem+Kufi:wght@600;700&family=Lalezar&family=Marhey:wght@600;700&display=swap';
+  document.head.appendChild(l);
+}
+// بيحدد إمتى انت بتتكلم عشان المزيكا توطى وتعلى لوحدها
+function reelEnv(v){
+  const W = Math.round(v.sr * .1), n = Math.ceil(v.data.length / W), r = new Float32Array(n); let pk = 0;
+  for(let w = 0; w < n; w++){ let s = 0; const e = Math.min(v.data.length, (w + 1) * W); for(let i = w * W; i < e; i++) s += v.data[i] * v.data[i]; r[w] = Math.sqrt(s / Math.max(1, e - w * W)); if(r[w] > pk) pk = r[w]; }
+  const thr = pk * .12, on = []; let hold = 0;
+  for(let w = 0; w < n; w++){ if(r[w] > thr) hold = 4; on.push(hold > 0); hold--; }
+  return on;
+}
 function reelInfo(u){
   const tKey = String(u.type || '').toLowerCase().trim(), type = AD_TYPE_AR[tKey] || u.type || 'وحدة';
   const pr = adNum(u.price), price = pr ? (/^[\d,]+$/.test(pr) ? pr + ' جنيه' : pr) : '';
@@ -3164,6 +3196,7 @@ function reelChunks(s){ const o = []; String(s || '').split(/[\.\!\؟\?،,\n]+/)
 function reelBuild(){
   const R = S.reel, items = R.items.length ? R.items : [{type:'ph'}], sc = [{k:'intro', d:2.2}];
   items.forEach((m, i) => { let d = 2.8; if(m.type === 'vid'){ const du = isFinite(m.el.duration) ? m.el.duration : 6; d = Math.max(2, Math.min(6, du - m.start)); } sc.push({k:'m', m, i, d}); });
+  if(R.spec){ const ii = reelInfo(R.u); if(ii.price || ii.bua) sc.push({k:'spec', d:2.8}); }
   sc.push({k:'outro', d:3.6});
   const flex = sc.filter(s => s.k === 'm' && s.m.type !== 'vid'); let total = sc.reduce((a, s) => a + s.d, 0);
   const need = R.voice ? R.voice.dur + 1.6 : 0;
@@ -3178,7 +3211,8 @@ function reelBuild(){
   return {scenes:sc, total:t, items, lines:lines.length ? lines : R.w.lines, subs, hook:(($('#rlHook') || {}).value || '').trim() || R.w.hook};
 }
 function reelFrame(x, t, tl){
-  const W = REEL_W, H = REEL_H, R = S.reel, info = reelInfo(R.u), F = (w, s) => `${w} ${s}px Cairo, system-ui, sans-serif`;
+  const W = REEL_W, H = REEL_H, R = S.reel, info = reelInfo(R.u), F = (w, s) => `${w} ${s}px "${R.font || 'Cairo'}", Cairo, system-ui, sans-serif`;
+  const TS = REEL_TS[R.tstyle] || REEL_TS.navy, FL = (REEL_FL[R.filter] || {}).l;
   const ease = v => 1 - Math.pow(1 - Math.min(Math.max(v, 0), 1), 3);
   const rr = (X, Y, w, h, r) => { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r); x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath(); };
   const fit = (s, max, z, w = 800, min = 30) => { x.font = F(w, z); while(x.measureText(s).width > max && z > min){ z -= 2; x.font = F(w, z); } return z; };
@@ -3194,8 +3228,13 @@ function reelFrame(x, t, tl){
     const px = m.type === 'vid' ? 0 : (i % 2 ? -1 : 1) * (p - .5) * Math.max(dw - W, 0) * .85, py = m.type === 'vid' ? 0 : (p - .5) * Math.max(dh - H, 0) * .3;
     x.drawImage(el, (W - dw) / 2 + px, (H - dh) / 2 + py, dw, dh);
     if(m.type === 'vid'){ x.globalCompositeOperation = 'overlay'; x.globalAlpha = a * .28; x.drawImage(el, (W - dw) / 2, (H - dh) / 2, dw, dh); x.globalCompositeOperation = 'source-over'; }
-    x.globalAlpha = 1;
+    if(FL) FL.forEach(([op, c, al]) => { x.globalCompositeOperation = op; x.globalAlpha = a * al; x.fillStyle = c; x.fillRect(0, 0, W, H); });
+    x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1;
   };
+  const tbox = (X, Y, w, h, r) => { if(!TS.bg) return; x.save(); x.fillStyle = TS.bg; rr(X, Y, w, h, r); x.fill(); if(TS.bd){ x.lineWidth = 5; x.strokeStyle = TS.bd; x.stroke(); } x.restore(); };
+  const ttxt = (s, X, Y) => { x.save(); x.fillStyle = TS.fg; x.textAlign = 'center';
+    if(!TS.bg){ x.lineJoin = 'round'; x.lineWidth = 12; x.strokeStyle = 'rgba(0,0,0,.6)'; x.shadowColor = 'rgba(0,0,0,.9)'; x.shadowBlur = 26; x.strokeText(s, X, Y); x.shadowBlur = 0; }
+    x.fillText(s, X, Y); x.restore(); };
   const shade = () => { let g = x.createLinearGradient(0, H * .38, 0, H); g.addColorStop(0, 'rgba(3,10,30,0)'); g.addColorStop(1, 'rgba(3,10,30,.85)'); x.fillStyle = g; x.fillRect(0, H * .38, W, H * .62);
     g = x.createLinearGradient(0, 0, 0, 420); g.addColorStop(0, 'rgba(3,10,30,.55)'); g.addColorStop(1, 'rgba(3,10,30,0)'); x.fillStyle = g; x.fillRect(0, 0, W, 420);
     g = x.createRadialGradient(W / 2, H / 2, H * .3, W / 2, H / 2, H * .75); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.35)'); x.fillStyle = g; x.fillRect(0, 0, W, H); };
@@ -3227,23 +3266,43 @@ function reelFrame(x, t, tl){
       x.fillStyle = R_ACC; rr(W / 2 - w / 2, y - 60, w, 120, 60); x.fill(); x.fillStyle = R_DEEP; ltr(info.c.phone, W / 2, y + 4); }
     x.fillStyle = R_ACC; x.font = F(700, 48); tx('كلّمنا أو ابعت واتساب دلوقتي', W / 2, cy + rad + 320);
     x.fillStyle = 'rgba(255,255,255,.5)'; x.font = F(600, 36); ltr('Blue Real Estate · Sheikh Zayed', W / 2, H - 140); x.globalAlpha = 1;
+  }else if(s.k === 'spec'){
+    const li = tl.items.length - 1; media(tl.items[li], 1, li); x.fillStyle = 'rgba(6,26,71,.84)'; x.fillRect(0, 0, W, H);
+    logo(W - 50 - 200, 170, 200); badge();
+    const k1 = ease(local / .55), k2 = ease((local - .45) / .55); let yy = H * .3;
+    if(info.bua){ x.globalAlpha = k1; x.fillStyle = 'rgba(255,255,255,.75)'; x.font = F(700, 56); tx('المساحة', W / 2, yy);
+      x.save(); x.translate(W / 2, yy + 160); const z = .75 + .25 * k1; x.scale(z, z); x.fillStyle = '#fff'; x.font = F(800, 170); tx(`${info.bua} متر`, 0, 0); x.restore();
+      const sub = [info.bed && `${info.bed} أوض`, info.bath && `${info.bath} حمام`].filter(Boolean).join(' · ');
+      if(sub){ x.fillStyle = 'rgba(255,255,255,.85)'; x.font = F(700, 60); tx(sub, W / 2, yy + 310); }
+      yy += 470; }
+    if(info.price && k2 > 0){ x.globalAlpha = k2; x.fillStyle = 'rgba(255,255,255,.75)'; x.font = F(700, 56); tx(info.rent ? 'الإيجار في الشهر' : 'السعر', W / 2, yy);
+      x.save(); x.translate(W / 2, yy + 150); const z = .75 + .25 * k2; x.scale(z, z); x.fillStyle = R_ACC; fit(info.price, W - 140, 140); tx(info.price, 0, 0); x.restore(); }
+    x.globalAlpha = 1;
   }else{
     const prev = sc[si - 1], fade = .45;
     if(local < fade && prev && prev.k === 'm' && prev.m.type !== 'vid'){ media(prev.m, 1, prev.i); media(s.m, p, s.i, ease(local / fade)); }
     else media(s.m, p, s.i);
     shade(); logo(W - 50 - 200, 170, 200); badge();
-    const line = tl.lines[s.i % tl.lines.length] || '', k = ease((local - .15) / .5), y = H * .58;
-    if(line && k > 0){ const z = fit(line, W - 200, 84); const w = Math.min(W - 100, x.measureText(line).width + 110) * (.4 + .6 * k);
-      x.globalAlpha = Math.min(1, k * 1.4); x.fillStyle = 'rgba(11,42,91,.92)'; rr(W / 2 - w / 2, y - 80, w, 160, 34); x.fill();
-      x.fillStyle = '#fff'; x.font = F(800, z); x.save(); x.translate(0, (1 - k) * 30); tx(line, W / 2, y - 4); x.restore(); x.globalAlpha = 1; }
+    const line = tl.lines[s.i % tl.lines.length] || '', lt = local - .15, y = H * .58;
+    if(line && lt > 0){
+      const z = fit(line, W - 200, 84), fw = Math.min(W - 100, x.measureText(line).width + 110), words = line.split(/\s+/);
+      let a = 1, sz = 1, dy = 0, w = fw, show = line;
+      if(R.anim === 'word'){ show = words.slice(0, Math.min(words.length, Math.floor(lt / .22) + 1)).join(' '); a = Math.min(1, lt / .2); }
+      else if(R.anim === 'zoom'){ const k = ease(lt / .45); sz = .55 + .45 * k; a = Math.min(1, k * 1.5); }
+      else if(R.anim === 'fade'){ a = Math.min(1, lt / .7); }
+      else { const k = ease(lt / .5); w = fw * (.4 + .6 * k); a = Math.min(1, k * 1.4); dy = (1 - k) * 30; }
+      x.save(); x.globalAlpha = a; x.translate(W / 2, y); x.scale(sz, sz);
+      tbox(-w / 2, -80, w, 160, 34); x.font = F(800, z); x.translate(0, dy); ttxt(show, 0, -4); x.restore(); x.globalAlpha = 1;
+    }
   }
   if(tl.subs.length){ const c = tl.subs.find(o => t >= o.t0 && t < o.t1);
     if(c){ x.font = F(700, 52); wrap(c.c, W - 200).slice(0, 2).forEach((ln, i) => { const w = x.measureText(ln).width + 50, y = H * .71 + i * 80;
-      x.fillStyle = 'rgba(0,0,0,.66)'; rr(W / 2 - w / 2, y - 38, w, 76, 16); x.fill(); x.fillStyle = '#fff'; tx(ln, W / 2, y + 2); }); } }
+      tbox(W / 2 - w / 2, y - 38, w, 76, 16); ttxt(ln, W / 2, y + 2); }); } }
 }
 function reelStill(){
   const R = S.reel, cv = $('#rlCv'); if(!R || !cv || R.run) return; const tl = reelBuild();
-  const t = R.at === 'intro' ? 1.4 : R.at === 'outro' ? tl.total - .2 : tl.scenes[1].t0 + 1.3;
+  const sp = tl.scenes.find(s => s.k === 'spec');
+  const t = R.at === 'intro' ? 1.4 : R.at === 'outro' ? tl.total - .2 : R.at === 'spec' && sp ? sp.t0 + 1.6 : tl.scenes[1].t0 + 1.3;
   reelFrame(cv.getContext('2d'), t, tl);
   const d = $('#rlDur'); if(d) d.textContent = `مدة الريل: ${Math.round(tl.total)} ثانية · ${R.items.length} ${R.items.length > 10 ? 'صورة/فيديو' : 'صور/فيديو'}${R.voice ? ' · بصوتك' : ' · من غير صوت لسه'}`;
 }
@@ -3266,11 +3325,12 @@ function reelVoiceHTML(){
 function reelRenderVoice(){ const el = $('#rlVoice'); if(el) el.innerHTML = reelVoiceHTML(); }
 function reelSheetHTML(u){
   const R = S.reel, w = R.w, moods = [['calm', 'هادية'], ['upbeat', 'حماسية'], ['lux', 'فخمة'], ['none', 'من غير']];
+  const opt = (k, v, t, st = '') => `<button type="button" class="btn mini ${R[k] === v ? 'on' : 'ghost'}" data-k="${k}" data-v="${esc(v)}" style="${st}" onclick="App.reelOpt('${k}', '${v}')">${t}</button>`;
   return `<div class="sheet-h"><div><h2>🎬 ريل الوحدة</h2><span class="muted" dir="ltr">${esc(u.code || '')}</span></div><button class="x" onclick="App.close()">×</button></div>
   <div class="reel-box">
     <div class="reel-ph"><canvas id="rlCv" width="${REEL_W}" height="${REEL_H}"></canvas></div>
     <div class="reel-prog"><i id="rlProg"></i></div>
-    <div class="reel-seg" id="rlSeg"><button type="button" class="btn ghost mini" data-a="intro" onclick="App.reelAt('intro')">البداية</button><button type="button" class="btn mini" data-a="mid" onclick="App.reelAt('mid')">الوحدة</button><button type="button" class="btn ghost mini" data-a="outro" onclick="App.reelAt('outro')">النهاية</button></div>
+    <div class="reel-seg" id="rlSeg"><button type="button" class="btn ghost mini" data-a="intro" onclick="App.reelAt('intro')">البداية</button><button type="button" class="btn mini" data-a="mid" onclick="App.reelAt('mid')">الوحدة</button><button type="button" class="btn ghost mini" data-a="spec" onclick="App.reelAt('spec')">السعر</button><button type="button" class="btn ghost mini" data-a="outro" onclick="App.reelAt('outro')">النهاية</button></div>
     <div class="muted" id="rlDur" style="font-size:12.5px;text-align:center"></div>
     <div class="row" style="justify-content:center;margin-top:8px"><button type="button" class="btn ghost" id="rlPlay" onclick="App.reelPlay()">▶ معاينة بالصوت</button><button type="button" class="btn" id="rlMake" onclick="App.reelMake()">🎬 اعمل الفيديو</button></div>
     <div id="rlStatus" class="muted" style="text-align:center;font-size:13px;min-height:18px;margin-top:6px">${R.items.length ? '' : 'بيحمّل الصور ويظبط ألوانها...'}</div>
@@ -3288,8 +3348,21 @@ function reelSheetHTML(u){
   <label class="f">جملة على كل صورة — كل سطر جملة</label><textarea class="in" id="rlLines" style="min-height:150px;line-height:1.8" oninput="App.reelStill()">${esc(w.lines.join('\n'))}</textarea>
   <button type="button" class="btn ghost mini" style="margin-top:8px" onclick="App.reelAgain()">✨ جمل تانية</button>
 
+  <h3>شكل الكتابة</h3>
+  <label class="f">طريقة العرض</label>
+  <div class="row">${Object.entries(REEL_TS).map(([k, o]) => opt('tstyle', k, o.n, o.bg ? `background:${o.bg};color:${o.fg};${o.bd ? 'border:2px solid ' + o.bd : ''}` : 'background:repeating-linear-gradient(45deg,#cbd5e1 0 6px,#e2e8f0 6px 12px);color:#fff;text-shadow:0 1px 4px #000')).join('')}</div>
+  <label class="f">الخط</label>
+  <div class="row">${REEL_FONTS.map(([f, n]) => opt('font', f, n, `font-family:'${f}',Cairo;font-size:15px`)).join('')}</div>
+  <label class="f">حركة الكتابة</label>
+  <div class="row">${REEL_ANIM.map(([k, n]) => opt('anim', k, n)).join('')}</div>
+
+  <h3>ألوان الصور</h3>
+  <div class="row">${Object.entries(REEL_FL).map(([k, o]) => opt('filter', k, o.n)).join('')}</div>
+  <label class="chk"><input type="checkbox" ${R.spec ? 'checked' : ''} onchange="App.reelOpt('spec', this.checked)"> لقطة للمساحة والسعر بخط كبير قبل النهاية</label>
+
   <h3>الموسيقى</h3>
   <div class="row" id="rlMood">${moods.map(([k, t]) => `<button type="button" class="btn mini ${R.mood === k ? '' : 'ghost'}" data-m="${k}" onclick="App.reelMood('${k}')">${t}</button>`).join('')}</div>
+  <label class="chk"><input type="checkbox" ${R.duck ? 'checked' : ''} onchange="App.reelOpt('duck', this.checked)"> المزيكا توطى وانت بتتكلم وتعلى بعد ما تخلص</label>
 
   <h3>صور أو فيديو زيادة</h3>
   <div class="muted" style="font-size:12.5px">صور الوحدة متحطوطة لوحدها. تقدر تضيف فيديو أو صور من موبايلك للريل ده بس (مش بتتحفظ في الوحدة).</div>
@@ -3877,9 +3950,12 @@ Object.assign(App, {
   async reelSheet(id){
     const u = unitById(id); if(!u) return;
     recCleanup(); reelCleanup();
-    const R = S.reel = {u, id, items:[], n:0, w:reelWrite(u, 0), mood:'calm', at:'mid', voice:null, logo:null, avatar:null};
+    const P = reelPrefs(); reelFontsLink();
+    const R = S.reel = {u, id, items:[], n:0, w:reelWrite(u, 0), mood:'calm', at:'mid', voice:null, logo:null, avatar:null,
+      font:REEL_FONTS.some(f => f[0] === P.font) ? P.font : 'Cairo', tstyle:REEL_TS[P.tstyle] ? P.tstyle : 'navy',
+      anim:REEL_ANIM.some(a => a[0] === P.anim) ? P.anim : 'slide', filter:REEL_FL[P.filter] ? P.filter : 'natural', spec:P.spec !== false, duck:P.duck !== false};
     openSheet(reelSheetHTML(u)); S.openUnitId = id;
-    try{ if(document.fonts && document.fonts.load) await Promise.all([document.fonts.load('800 60px Cairo'), document.fonts.load('700 40px Cairo')]); }catch(e){}
+    try{ if(document.fonts && document.fonts.load) await Promise.all([document.fonts.load('800 60px Cairo'), document.fonts.load('700 40px Cairo'), document.fonts.load(`800 60px "${R.font}"`)]); }catch(e){}
     R.logo = await wmImage(); R.avatar = await loadImg(adContact(u).photo);
     if(S.reel !== R) return; reelStill();
     const ph = u.photos || [], st = m => { const e = $('#rlStatus'); if(e && S.reel === R) e.textContent = m; };
@@ -3897,6 +3973,13 @@ Object.assign(App, {
     const R = S.reel; if(!R) return; R.n++; R.w = reelWrite(R.u, R.n);
     $('#rlHook').value = R.w.hook; $('#rlLines').value = R.w.lines.join('\n');
     if(!R.voice) $('#rlScript').value = R.w.script;
+    reelStill();
+  },
+  async reelOpt(k, v){
+    const R = S.reel; if(!R) return; R[k] = v; reelSavePrefs(R);
+    document.querySelectorAll(`#sheet button[data-k="${k}"]`).forEach(b => { const on = b.dataset.v === String(v); b.classList.toggle('on', on); b.classList.toggle('ghost', !on); });
+    if(k === 'spec' && !v && R.at === 'spec') App.reelAt('mid');
+    if(k === 'font'){ try{ await Promise.all([document.fonts.load(`800 60px "${v}"`), document.fonts.load(`700 40px "${v}"`)]); }catch(e){} }
     reelStill();
   },
   reelMood(k){ const R = S.reel; if(!R) return; R.mood = k; document.querySelectorAll('#rlMood button').forEach(b => b.classList.toggle('ghost', b.dataset.m !== k)); },
@@ -3957,7 +4040,17 @@ Object.assign(App, {
     const mix = ac.createGain(); mix.connect(ac.destination); let dest = null;
     if(record){ dest = ac.createMediaStreamDestination(); mix.connect(dest); }
     const t0 = ac.currentTime + .2, total = tl.total, lvl = R.voice ? .22 : .75, mg = ac.createGain(); mg.connect(mix);
-    mg.gain.setValueAtTime(0, t0); mg.gain.linearRampToValueAtTime(lvl, t0 + .6); mg.gain.setValueAtTime(lvl, Math.max(t0 + .7, t0 + total - 1.6)); mg.gain.linearRampToValueAtTime(0, t0 + total);
+    const endF = Math.max(t0 + .7, t0 + total - 1.6);
+    if(R.voice && R.duck){
+      const lo = .2, hi = .6, vs = t0 + .25, on = reelEnv(R.voice); let prev = on[0] !== false, last = t0 + .6;
+      mg.gain.setValueAtTime(0, t0); mg.gain.linearRampToValueAtTime(prev ? lo : hi, last);
+      on.forEach((o, i) => { if(o === prev) return; const tt = vs + i * .1, a = tt - (o ? .08 : 0), b = tt + (o ? .06 : .4);
+        if(a > last + .02 && b < endF - .05){ mg.gain.setValueAtTime(prev ? lo : hi, a); mg.gain.linearRampToValueAtTime(o ? lo : hi, b); last = b; prev = o; } });
+      const ve = vs + R.voice.dur + .1;
+      if(prev && ve > last + .02 && ve + .5 < endF - .05){ mg.gain.setValueAtTime(lo, ve); mg.gain.linearRampToValueAtTime(hi, ve + .5); prev = false; }
+      mg.gain.setValueAtTime(prev ? lo : hi, endF);
+    }else{ mg.gain.setValueAtTime(0, t0); mg.gain.linearRampToValueAtTime(lvl, t0 + .6); mg.gain.setValueAtTime(lvl, endF); }
+    mg.gain.linearRampToValueAtTime(0, t0 + total);
     if(R.mood !== 'none') reelSynth(ac, mg, t0, total, R.mood);
     if(R.voice){ const b = ac.createBuffer(1, R.voice.data.length, R.voice.sr); b.getChannelData(0).set(R.voice.data);
       const s = ac.createBufferSource(); s.buffer = b; const comp = ac.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 3;
