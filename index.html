@@ -373,7 +373,7 @@ const firebaseConfig = {
 const ADMIN_EMAIL = "atefwaer@gmail.com";   // إيميل الأدمن (عاطف)
 const LOGIN_DOMAIN = "bluecrm.app";         // السيلز بيدخلوا باسم دخول بسيط، والسيستم بيكمّله بالدومين ده
 // القيم دي بقت بتتغير من الإعدادات (الأدمن بس) — دي القيم الأساسية لو محدش غيرها
-const CFG_DEF = {firstContactHours:24, followDays:3, availRemindDays:7, maxPhotos:10, maxRecSec:180, sound:true};
+const CFG_DEF = {firstContactHours:24, followDays:3, availRemindDays:7, maxPhotos:10, maxRecSec:180, sound:true, officeRadius:300};
 const daysTxt = n => n == 7 ? 'أسبوع' : n == 1 ? 'يوم' : n == 2 ? 'يومين' : n + ' أيام';
 const hoursTxt = n => n == 24 ? '24 ساعة' : n == 48 ? 'يومين' : n + ' ساعة';
 const cfg = k => { let v; try{ v = S.settings ? S.settings[k] : undefined; }catch(e){} return v === undefined || v === null || v === '' ? CFG_DEF[k] : v; };
@@ -1842,7 +1842,7 @@ function makeDemoStore(){
       : me.role === 'leader' ? clone(db.activities.filter(a => a.teamId === me.uid)).sort((a,b) => b.at - a.at).slice(0, 300) : [])); },
     async addLeads(list){ list.forEach(l => { const id = uid(); db.leads[id] = {...clone(l), id}; }); persist(); },
     async updateLeads(ids, patch, hist){
-      ids.forEach(id => { const l = db.leads[id]; if(!l) return; Object.assign(l, clone(patch)); if(hist) l.history.push(clone(hist)); });
+      ids.forEach(id => { const l = db.leads[id]; if(!l) return; Object.entries(clone(patch)).forEach(([k, v]) => { if(k.includes('.')){ const [a, b] = k.split('.'); l[a] = l[a] || {}; l[a][b] = v; } else l[k] = v; }); if(hist) l.history.push(clone(hist)); });
       persist();
     },
     async deleteLeads(ids){ ids.forEach(id => delete db.leads[id]); persist(); },
@@ -2196,7 +2196,7 @@ function navView(){
     : [['today','النهارده',ICON.today],['leads','ليدز',ICON.fire],['data','داتا',ICON.list],['units','الوحدات',ICON.unit]];
   const badges = {};
   badges[isAdmin() ? 'home' : 'today'] = !isAdmin() ? S.leads.filter(l => isOverdue(l) || isDueToday(l) || isLateFirst(l) || myNudge(l)).length + S.units.filter(u => isSoon(u) && u.agentId === S.me.uid).length + (reportLate() ? 1 : 0) + (canApprove() ? S.units.filter(u => u.pendingDup).length : 0)
-    : S.leads.filter(isLateFirst).length + S.units.filter(u => u.pendingDup && canSeePending(u)).length;
+    : S.leads.filter(isLateFirst).length + S.units.filter(u => u.pendingDup && canSeePending(u)).length + vwReqs().length;
   badges.leads = S.leads.filter(l => !l.movedToUnit && isLeadK(l) && l.status === 'new' && !l.lastContactAt && (isAdmin() || l.assignedTo === S.me.uid)).length;
   return `<nav class="nav">${tabs.map(([k, t, ic]) =>
     `<button class="${S.tab === k || (k === 'leads' && S.tab === 'leads') ? 'on' : ''}${k === 'leads' ? ' navlead' : ''}" onclick="App.go('${k}')">${ic}${t}${badges[k] ? `<span class="dot${k === 'leads' ? ' fire' : ''}">${badges[k]}</span>` : ''}</button>`).join('')}</nav>`;
@@ -2268,37 +2268,83 @@ function callsByToday(){
 }
 /* ---------------- المعاينات ---------------- */
 const VW_EVERY = 60000;          // تحديث المكان كل دقيقة
-const VW_MAX_AGE = 6 * 3600000;  // المعاينة اللي بقالها 6 ساعات من غير تحديث بتختفي من القايمة
+
 const myViewing = () => S.leads.find(l => l.viewing && l.viewing.active && l.viewing.by === S.me.uid);
+// مكتب Blue في الكورت يارد — المعاينة بتتقفل لوحدها لما السيلز يرجع جوه الدايرة دي
+const OFFICE = {lat:30.042816, lng:30.981428};
+const distM = (a, b) => Math.round(Math.hypot((a.lat - b.lat) * 111000, (a.lng - b.lng) * 111000 * Math.cos(a.lat * Math.PI / 180)));
+const offDist = p => p && p.lat ? distM(p, OFFICE) : null;
+const atOffice = p => { const d = offDist(p); return d !== null && d <= cfg('officeRadius') + Math.min(p.acc || 0, 100); };
+const awayOffice = p => { const d = offDist(p); return d !== null && d > cfg('officeRadius') + 50; };
+const distTxt = d => d == null ? '' : d < 1000 ? `${d} متر` : `${(d / 1000).toFixed(1)} كم`;
+const canApproveVw = l => !!l.viewing && (isBoss() || (isLeader() && (l.teamId === S.me.uid || teamOf(l.viewing.by) === S.me.uid))) && l.viewing.by !== S.me.uid;
+const vwOldDay = v => (v.start || 0) < startOfDay();
+const vwReqs = () => S.leads.filter(l => l.viewing && l.viewing.active && l.viewing.endReq && canApproveVw(l));
+// أزرار السيلز وهو في المعاينة (حسب حالة طلب الإنهاء)
+function vwOwnControls(l){
+  const v = l.viewing;
+  if(v.endReq) return `<div class="card" style="margin-top:8px;background:#FFFBEB;border-color:#FCD34D;font-size:13px">⏳ طلب إنهاء المعاينة اتبعت لمديرك ${minsAgo(v.endReq.at)} ومستني موافقته.<div class="muted" style="font-size:12px">ولو رجعت المكتب وفتحت الأبليكيشن، هتتقفل لوحدها.</div></div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button></div>`;
+  return `${v.rej ? `<div class="err" style="margin-top:8px">${esc(v.rej.byName || 'مديرك')} رفض طلب الإنهاء — ارجع المكتب أو ابعت طلب تاني</div>` : ''}
+    <div class="muted" style="font-size:12px;margin-top:6px">المعاينة بتتقفل لوحدها أول ما ترجع المكتب وتفتح الأبليكيشن. لو مش راجع المكتب، دوس "خلصت المعاينة" وابعت طلب لمديرك.</div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button>
+      <button class="btn danger" id="vwEndBtn" onclick="App.vwEnd('${l.id}')">خلصت المعاينة</button></div>`;
+}
+async function vwFinish(l, pos, how){
+  if(VW && VW.leadId === l.id) VW.ending = true;
+  const now = Date.now(), v = {...l.viewing, active:false, end:now, endBy:how, endReq:null, ...(pos && pos.lat ? {endLat:pos.lat, endLng:pos.lng} : {})};
+  const mins = Math.max(1, Math.round((now - v.start) / 60000));
+  await store.updateLeads([l.id], {viewing:v}); l.viewing = v;
+  if(v.by === S.me.uid) vwStop();
+  await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:l.id, leadName:l.name || '', note:`${S.me.name} خلّص معاينة مع ${l.name || 'عميل'} (${mins} دقيقة)${v.unit ? ' — ' + v.unit : ''}${how === 'office' ? ' — رجع المكتب ✓' : ''}`, teamId:l.teamId || myTeam()}).catch(() => {});
+}
+// بيتنادى مع كل تحديث للمكان: لو السيلز خرج من المكتب ورجع تاني، المعاينة تتقفل لوحدها
+async function vwCheckOffice(p){
+  if(!VW || VW.ending) return;
+  const l = leadById(VW.leadId); if(!l || !l.viewing || !l.viewing.active || l.viewing.by !== S.me.uid) return;
+  if(!l.viewing.left){
+    if(awayOffice(p)){ l.viewing.left = true; try{ await store.updateLeads([l.id], {'viewing.left':true}); }catch(e){} }
+    return;
+  }
+  if(atOffice(p)){
+    try{ await vwFinish(l, p, 'office'); toast('🏢 رجعت المكتب — المعاينة اتقفلت لوحدها ✓'); beep('info'); render(); }catch(e){ if(VW) VW.ending = false; }
+  }
+}
 function minsAgo(t){ const m = Math.max(0, Math.round((Date.now() - t) / 60000)); return m < 1 ? 'دلوقتي' : m < 60 ? `من ${m} دقيقة` : `من ${Math.floor(m / 60)} ساعة و${m % 60} دقيقة`; }
 function viewingBanner(){
   const l = myViewing(); if(!l) return '';
   const v = l.viewing;
-  return `<div class="card" style="margin:10px 12px 0;border:2px solid #16A34A;background:#F0FDF4">
+  return `<div class="card" style="margin:10px 12px 0;border:2px solid ${vwOldDay(v) ? '#DC2626' : '#16A34A'};background:${vwOldDay(v) ? '#FEF2F2' : '#F0FDF4'}">
     <div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">🚶</span>
       <div style="flex:1;min-width:0"><b>انت في معاينة مع ${esc(l.name || 'عميل')}</b>
       <div class="muted" style="font-size:12.5px">${v.unit ? esc(v.unit) + ' · ' : ''}بدأت ${minsAgo(v.start)} · ${v.at ? 'آخر مكان اتبعت ' + minsAgo(v.at) : 'لسه مفيش مكان'}</div>
       <div class="muted" style="font-size:12px;color:#B45309">خلّي الأبليكيشن مفتوح عشان مكانك يفضل يتحدث</div></div></div>
-    <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button>
-      <button class="btn danger" id="vwEndBtn" onclick="App.vwEnd('${l.id}')">خلصت المعاينة</button></div></div>`;
+    ${vwOwnControls(l)}</div>`;
 }
 function activeViewingsCard(){
-  const list = S.leads.filter(l => l.viewing && l.viewing.active && (Date.now() - (l.viewing.at || l.viewing.start)) < VW_MAX_AGE)
-    .sort((a, b) => b.viewing.start - a.viewing.start);
+  const list = S.leads.filter(l => l.viewing && l.viewing.active && l.viewing.by !== S.me.uid)
+    .sort((a, b) => (!!b.viewing.endReq - !!a.viewing.endReq) || (vwOldDay(b.viewing) - vwOldDay(a.viewing)) || b.viewing.start - a.viewing.start);
   if(!list.length) return '';
-  return `<h3 style="margin-top:4px">🚶 معاينات شغالة دلوقتي (${list.length})</h3><div class="card" style="padding:2px 14px;margin-bottom:12px">${list.map(l => {
-    const v = l.viewing, old = v.at ? Date.now() - v.at > 5 * 60000 : true;
-    return `<div class="staff"><div class="staff-top">${avatarHtml(v.by, 36)}
+  const nReq = list.filter(l => l.viewing.endReq && canApproveVw(l)).length, nOld = list.filter(l => vwOldDay(l.viewing)).length;
+  return `<h3 style="margin-top:4px">🚶 معاينات شغالة دلوقتي (${list.length})${nReq ? ` · <span style="color:#B45309">${nReq} طلب إنهاء</span>` : ''}${nOld ? ` · <span style="color:#B91C1C">${nOld} مفتوحة من يوم قبل كده</span>` : ''}</h3><div class="card" style="padding:2px 14px;margin-bottom:12px">${list.map(l => {
+    const v = l.viewing, old = v.at ? Date.now() - v.at > 5 * 60000 : true, red = vwOldDay(v), r = v.endReq;
+    return `<div class="staff" ${red ? 'style="background:#FEF2F2;margin:0 -14px;padding-left:14px;padding-right:14px;border-right:4px solid #DC2626"' : ''}><div class="staff-top">${avatarHtml(v.by, 36)}
       <div style="flex:1;min-width:0"><b>${esc(v.byName || userName(v.by))}</b> مع <a href="javascript:void 0" onclick="App.open('${l.id}')" style="color:var(--navy);font-weight:700">${esc(l.name || 'عميل')}</a>
         <div class="muted" style="font-size:12px">${v.unit ? esc(v.unit) + ' · ' : ''}بدأت ${minsAgo(v.start)}</div>
-        <div style="font-size:12px;color:${old ? '#B91C1C' : '#15803D'}">${v.at ? 'آخر مكان ' + minsAgo(v.at) + (old ? ' — الأبليكيشن غالبًا مقفول عنده' : '') : 'لسه مبعتش مكانه'}</div></div>
-      ${v.lat ? `<a class="btn ghost mini" href="${mapsUrl(v)}" target="_blank" rel="noopener">الخريطة</a>` : ''}</div></div>`; }).join('')}</div>`;
+        <div style="font-size:12px;color:${old ? '#B91C1C' : '#15803D'}">${v.at ? 'آخر مكان ' + minsAgo(v.at) + (old ? ' — الأبليكيشن غالبًا مقفول عنده' : '') : 'لسه مبعتش مكانه'}</div>
+        ${red ? `<div style="font-size:12px;color:#B91C1C;font-weight:800">⚠️ المعاينة دي مفتوحة من ${new Date(v.start).toLocaleDateString('ar-EG')} ولسه ماتقفلتش</div>` : ''}</div>
+      ${v.lat ? `<a class="btn ghost mini" href="${mapsUrl(v)}" target="_blank" rel="noopener">الخريطة</a>` : ''}</div>
+      ${r ? `<div class="card" style="margin:6px 0 8px;background:#FFFBEB;border-color:#FCD34D;font-size:13px">
+        <b>⏳ طالب ينهي المعاينة وهو برّه المكتب</b> · ${minsAgo(r.at)}${r.dist != null ? ` · على بعد ${distTxt(r.dist)} من المكتب` : ' · مكانه مش معروف'}
+        <div style="margin-top:4px;white-space:pre-wrap">"${esc(r.note || '')}"</div>
+        ${r.lat ? `<a class="btn ghost mini" style="margin-top:6px" href="${mapsUrl(r)}" target="_blank" rel="noopener">مكانه وقت الطلب</a>` : ''}
+        ${canApproveVw(l) ? `<div class="row" style="margin-top:8px"><button class="btn green" onclick="App.vwApprove('${l.id}')">✓ وافق وأنهي المعاينة</button><button class="btn danger" onclick="App.vwReject('${l.id}')">ارفض</button></div>` : ''}</div>` : ''}</div>`; }).join('')}</div>`;
 }
 function viewingLeadBlock(l){
   const v = l.viewing;
   if(v && v.active){
     if(v.by === S.me.uid) return `<div class="card" style="margin-top:10px;border:2px solid #16A34A;background:#F0FDF4"><b>🚶 انت في معاينة مع العميل ده</b>
-      <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button><button class="btn danger" id="vwEndBtn" onclick="App.vwEnd('${l.id}')">خلصت المعاينة</button></div></div>`;
+      ${vwOwnControls(l)}</div>`;
     return `<div class="card" style="margin-top:10px;background:#F0FDF4"><b>🚶 ${esc(v.byName || '')} في معاينة مع العميل ده</b><div class="muted" style="font-size:12.5px">${v.at ? 'آخر مكان ' + minsAgo(v.at) : ''}</div>
       ${v.lat ? `<a class="btn ghost mini" style="margin-top:6px" href="${mapsUrl(v)}" target="_blank" rel="noopener">افتح على الخريطة</a>` : ''}</div>`;
   }
@@ -2321,8 +2367,9 @@ async function vwSend(force){
   const now = Date.now();
   if(!force && now - VW.sent < VW_EVERY - 3000) return;
   VW.sent = now;
-  const v = {...l.viewing, at:now, ...(VW.pos || {})};
-  try{ await store.updateLeads([l.id], {viewing:v}); }catch(e){}
+  // بنحدّث المكان بس (مش المعاينة كلها) عشان مانرجعش معاينة المدير قفلها
+  const up = {'viewing.at':now}; if(VW.pos) Object.entries(VW.pos).forEach(([k, val]) => up['viewing.' + k] = val);
+  try{ await store.updateLeads([l.id], up); }catch(e){}
 }
 function vwTrack(leadId){
   if(VW && VW.leadId === leadId) return;
@@ -2331,17 +2378,18 @@ function vwTrack(leadId){
   if(navigator.geolocation) VW.watch = navigator.geolocation.watchPosition(p => {
     const np = {lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6), acc:Math.round(p.coords.accuracy || 0)};
     const moved = VW.pos ? Math.hypot((np.lat - VW.pos.lat) * 111000, (np.lng - VW.pos.lng) * 96000) : 9999;
-    VW.pos = np;
+    VW.pos = np; VW.posAt = Date.now();
     if(moved > 80 && Date.now() - VW.sent > 20000) vwSend(true); else vwSend(false);
+    vwCheckOffice(np);
   }, () => {}, {enableHighAccuracy:true, maximumAge:15000, timeout:30000});
   VW.timer = setInterval(() => vwSend(false), 15000);
 }
 function vwResume(){
   if(!S.me) return;
   const l = myViewing();
-  if(l) vwTrack(l.id); else vwStop();
+  if(l){ const fresh = !VW || VW.leadId !== l.id; vwTrack(l.id); if(fresh) getPosition().then(p => { if(VW) VW.pos = p; vwCheckOffice(p); }).catch(() => {}); } else vwStop();
 }
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && VW) vwSend(true); });
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && VW){ vwSend(true); getPosition().then(p => { if(VW) VW.pos = p; vwCheckOffice(p); }).catch(() => {}); } });
 
 /* ---------------- الإعدادات (الأدمن بس): ميعاد التقرير + الثيم ---------------- */
 const SETTINGS_DOC = 'meta_settings';
@@ -2385,6 +2433,7 @@ function settingsSheet(){
     <div class="card">
       ${numRow('setMp', 'أقصى عدد صور للوحدة', cfg('maxPhotos'), 1, 30)}
       ${numRow('setRec', 'أقصى مدة للفويس (دقيقة)', Math.round(cfg('maxRecSec') / 60), 1, 10)}
+      ${numRow('setOr', 'مساحة المكتب للمعاينات (متر حوالين المكتب)', cfg('officeRadius'), 100, 2000)}
     </div>
     <h3>🔔 صوت التنبيهات</h3>
     <div class="card"><div class="colrow" style="border:0"><label>صوت مع كل تنبيه (ليد جديد، تنبيه من المدير، تأخير...)</label>
@@ -4361,7 +4410,7 @@ Object.assign(App, {
   settings(){ if(!isOwner()) return; S._thDraft = null; openSheet(settingsSheet()); },
   setClose(){ S._thDraft = null; applyTheme((S.settings || {}).theme); closeSheet(); },
   thRead(){ const g = id => ($(id) ? $(id).value : ''); const head = (S._thDraft || (S.settings || {}).theme || {}).head; return {mode:'custom', bg:g('#thBg'), card:g('#thCard'), ink:g('#thInk'), ...(head ? {head} : {})}; },
-  setKeep(){ const ids = ['#setHour', '#setFc', '#setFd', '#setAv', '#setMp', '#setRec']; const v = {}; ids.forEach(i => { if($(i)) v[i] = $(i).value; }); v.snd = $('#setSnd') ? $('#setSnd').checked : null; return () => { ids.forEach(i => { if($(i) && v[i] != null) $(i).value = v[i]; }); if($('#setSnd') && v.snd !== null) $('#setSnd').checked = v.snd; }; },
+  setKeep(){ const ids = ['#setHour', '#setFc', '#setFd', '#setAv', '#setMp', '#setRec', '#setOr']; const v = {}; ids.forEach(i => { if($(i)) v[i] = $(i).value; }); v.snd = $('#setSnd') ? $('#setSnd').checked : null; return () => { ids.forEach(i => { if($(i) && v[i] != null) $(i).value = v[i]; }); if($('#setSnd') && v.snd !== null) $('#setSnd').checked = v.snd; }; },
   thMode(m){ S._thDraft = m === 'custom' ? {...THEME_PRESETS.sky, ...(((S.settings || {}).theme || {}).mode === 'custom' ? S.settings.theme : {}), mode:'custom'} : {mode:'standard'};
     const back = App.setKeep(); applyTheme(S._thDraft); openSheet(settingsSheet()); back(); },
   thPreset(k){ const p = THEME_PRESETS[k]; S._thDraft = {mode:'custom', bg:p.bg, card:p.card, ink:p.ink, ...(p.head ? {head:p.head} : {})}; const back = App.setKeep(); applyTheme(S._thDraft); openSheet(settingsSheet()); back(); },
@@ -4376,7 +4425,7 @@ Object.assign(App, {
       await store.setMeta(SETTINGS_DOC, {reportHour:+$('#setHour').value,
         firstContactHours:num('#setFc', 1, 240, CFG_DEF.firstContactHours), followDays:num('#setFd', 1, 60, CFG_DEF.followDays),
         availRemindDays:num('#setAv', 1, 60, CFG_DEF.availRemindDays), maxPhotos:num('#setMp', 1, 30, CFG_DEF.maxPhotos),
-        maxRecSec:num('#setRec', 1, 10, 3) * 60, sound:$('#setSnd').checked, theme:theme.mode === 'custom' ? {mode:'custom', bg:theme.bg, card:theme.card, ink:theme.ink, head:theme.head || null} : {mode:'standard'}});
+        maxRecSec:num('#setRec', 1, 10, 3) * 60, officeRadius:num('#setOr', 100, 2000, CFG_DEF.officeRadius), sound:$('#setSnd').checked, theme:theme.mode === 'custom' ? {mode:'custom', bg:theme.bg, card:theme.card, ink:theme.ink, head:theme.head || null} : {mode:'standard'}});
       S._thDraft = null; closeSheet(); toast('اتحفظت الإعدادات ✓ — هتتطبق عند الفريق كله'); render();
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'حفظ الإعدادات'; }
   },
@@ -4614,7 +4663,7 @@ Object.assign(App, {
     const l = leadById(id); if(!l) return;
     const guess = [l.project, l.unit].filter(Boolean).join(' – ');
     openSheet(`<div class="sheet-h"><h2>🚶 معاينة مع ${esc(l.name || 'العميل')}</h2><button class="x" onclick="App.close()">×</button></div>
-      <p class="muted">أول ما تبدأ، مكانك هيتبعت لمديرك كل دقيقة طول ما الأبليكيشن مفتوح، ولما تخلص دوس "خلصت المعاينة".</p>
+      <p class="muted">أول ما تبدأ، مكانك هيتبعت لمديرك كل دقيقة طول ما الأبليكيشن مفتوح. المعاينة بتتقفل لوحدها أول ما ترجع المكتب وتفتح الأبليكيشن، ولو مش راجع المكتب هتبعت طلب إنهاء لمديرك يوافق عليه.</p>
       <div class="card"><label class="f">الوحدة / المشروع (اختياري)</label>
         <input class="in" id="vwUnit" list="vwUnits" value="${esc(guess)}" placeholder="مثلاً: Allegria – فيلا B12">
         <datalist id="vwUnits">${[...new Set(S.units.map(u => [u.project, u.unitNo].filter(Boolean).join(' – ')).filter(Boolean))].slice(0, 400).map(t => `<option value="${esc(t)}">`).join('')}</datalist>
@@ -4627,7 +4676,7 @@ Object.assign(App, {
     let pos = null;
     try{ pos = await getPosition(); }catch(e){ toast(e.message + ' — المعاينة هتبدأ من غير مكان'); }
     const now = Date.now(), unit = ($('#vwUnit') || {}).value ? $('#vwUnit').value.trim() : '';
-    const v = {active:true, start:now, at:pos ? now : null, unit, by:S.me.uid, byName:S.me.name, ...(pos || {})};
+    const v = {active:true, start:now, at:pos ? now : null, unit, by:S.me.uid, byName:S.me.name, ...(pos || {}), left:!!(pos && awayOffice(pos))};
     try{
       await store.updateLeads([id], {viewing:v});
       await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`${S.me.name} طلع معاينة مع ${l.name || 'عميل'}${unit ? ' — ' + unit : ''}`, teamId:l.teamId || myTeam(), ...(pos ? {lat:pos.lat, lng:pos.lng} : {})});
@@ -4648,15 +4697,61 @@ Object.assign(App, {
       <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">بعدين</button>`);
   },
   async vwEnd(id){
-    const l = leadById(id), b = $('#vwEndBtn'); if(!l || !l.viewing) return;
-    if(b && !b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'متأكد؟ دوس تاني'; return; }
-    const now = Date.now(), v = {...l.viewing, active:false, end:now};
-    const mins = Math.max(1, Math.round((now - v.start) / 60000));
+    const l = leadById(id), b = $('#vwEndBtn'); if(!l || !l.viewing || !l.viewing.active) return;
+    if(l.viewing.endReq) return toast('طلبك مستني موافقة مديرك');
+    if(b){ b.disabled = true; b.textContent = 'بيحدد مكانك...'; }
+    let pos = VW && VW.leadId === id && VW.pos && Date.now() - (VW.posAt || 0) < 60000 ? VW.pos : null;
+    if(!pos) try{ pos = await getPosition(); }catch(e){}
+    if(b){ b.disabled = false; b.textContent = 'خلصت المعاينة'; }
+    if(atOffice(pos) || isBoss()){
+      try{ await vwFinish(l, pos, atOffice(pos) ? 'office' : 'self'); closeSheet(); toast('اتسجلت المعاينة ✓ — متنساش تكتب حصل إيه مع العميل'); render(); setTimeout(() => App.open(id), 300); }
+      catch(e){ toast(fbError(e)); }
+      return;
+    }
+    S._vwPos = pos; const d = offDist(pos);
+    openSheet(`<div class="sheet-h"><h2>🏢 انت لسه برّه المكتب</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted">${d != null ? `مكانك دلوقتي على بعد <b>${distTxt(d)}</b> من المكتب.` : 'مقدرتش أحدد مكانك دلوقتي.'} المعاينة بتتقفل لوحدها أول ما ترجع المكتب وتفتح الأبليكيشن.</p>
+      <div class="card"><b>مش راجع المكتب؟</b><div class="muted" style="font-size:12.5px">ابعت طلب إنهاء لمديرك، ومكانك الحالي هيتبعت معاه. المعاينة هتفضل مفتوحة لحد ما يوافق.</div>
+        <label class="f">حصل إيه في المعاينة؟</label><textarea class="in" id="vwNote" style="min-height:80px" placeholder="مثلاً: العميل عجبته الشقة وعايز يتفاوض على السعر"></textarea>
+        <button class="btn block" style="margin-top:10px" id="vwReqBtn" onclick="App.vwReq('${id}')">ابعت طلب الإنهاء لمديرك</button></div>
+      <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">هرجع المكتب</button>`);
+  },
+  async vwReq(id){
+    const l = leadById(id); if(!l || !l.viewing || !l.viewing.active) return;
+    const note = ($('#vwNote') || {}).value ? $('#vwNote').value.trim() : '';
+    if(note.length < 3) return toast('اكتب حصل إيه في المعاينة الأول');
+    const b = $('#vwReqBtn'); b.disabled = true; b.textContent = 'بيبعت...';
+    const pos = S._vwPos, now = Date.now(), d = offDist(pos);
+    const r = {at:now, note, dist:d, ...(pos && pos.lat ? {lat:pos.lat, lng:pos.lng, acc:pos.acc || 0} : {})};
     try{
-      await store.updateLeads([id], {viewing:v}); vwStop();
-      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`${S.me.name} خلّص معاينة مع ${l.name || 'عميل'} (${mins} دقيقة)${v.unit ? ' — ' + v.unit : ''}`, teamId:l.teamId || myTeam()});
-      closeSheet(); toast('اتسجلت المعاينة ✓ — متنساش تكتب حصل إيه مع العميل'); render();
-      setTimeout(() => App.open(id), 300);
+      await store.updateLeads([id], {'viewing.endReq':r, 'viewing.rej':null});
+      l.viewing = {...l.viewing, endReq:r, rej:null};
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`⏳ ${S.me.name} طالب ينهي معاينة مع ${l.name || 'عميل'} وهو برّه المكتب${d != null ? ' (على بعد ' + distTxt(d) + ')' : ''}: "${note}"`, teamId:l.teamId || myTeam()}).catch(() => {});
+      const m = vwManager();
+      openSheet(`<div class="sheet-h"><h2>✓ الطلب اتبعت</h2><button class="x" onclick="App.close()">×</button></div>
+        <p class="muted">مديرك هيشوف الطلب في الرئيسية ويوافق عليه. لو رجعت المكتب قبلها، المعاينة هتتقفل لوحدها.</p>
+        ${m ? `<a class="btn block" style="background:#25D366" href="https://wa.me/${waNum(m.phone)}?text=${encodeURIComponent(`🚶 خلصت معاينة ${l.name || ''} ومش راجع المكتب — وافق على إنهائها من الأبليكيشن لو سمحت\n${note}`)}" target="_blank" rel="noopener">بلّغ ${esc(m.name)} على واتساب</a>` : ''}
+        <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">تمام</button>`);
+      render();
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'ابعت طلب الإنهاء لمديرك'; }
+  },
+  async vwApprove(id){
+    const l = leadById(id); if(!l || !l.viewing || !l.viewing.active || !canApproveVw(l)) return;
+    const r = l.viewing.endReq || {}, now = Date.now();
+    const v = {...l.viewing, active:false, end:r.at || now, endBy:'approved', approvedBy:S.me.uid, approvedByName:S.me.name, endReq:null, endNote:r.note || '', ...(r.lat ? {endLat:r.lat, endLng:r.lng} : {})};
+    const mins = Math.max(1, Math.round((v.end - v.start) / 60000));
+    try{
+      await store.updateLeads([id], {viewing:v});
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`✓ ${S.me.name} وافق على إنهاء معاينة ${v.byName || ''} مع ${l.name || 'عميل'} (${mins} دقيقة)${r.note ? ': "' + r.note + '"' : ''}`, teamId:l.teamId || null}).catch(() => {});
+      toast('اتقفلت المعاينة ✓'); render();
+    }catch(e){ toast(fbError(e)); }
+  },
+  async vwReject(id){
+    const l = leadById(id); if(!l || !l.viewing || !l.viewing.active || !canApproveVw(l)) return;
+    try{
+      await store.updateLeads([id], {'viewing.endReq':null, 'viewing.rej':{at:Date.now(), by:S.me.uid, byName:S.me.name}});
+      await store.addActivity({type:'viewing', at:Date.now(), by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`✕ ${S.me.name} رفض طلب إنهاء معاينة ${l.viewing.byName || ''} مع ${l.name || 'عميل'}`, teamId:l.teamId || null}).catch(() => {});
+      toast('اترفض الطلب'); render();
     }catch(e){ toast(fbError(e)); }
   },
   aliasSheet(id){
@@ -4816,10 +4911,11 @@ setInterval(() => {
   if(!S.me || !S.leadsLoaded) return;
   const mine = l => isAdmin() || l.assignedTo === S.me.uid;
   const now = {late:S.leads.filter(l => mine(l) && isLateFirst(l)).length, rep:reportLate() ? 1 : 0,
-    pend:canApprove() ? S.units.filter(u => u.pendingDup).length : 0, soon:S.units.filter(u => isSoon(u) && (isAdmin() ? myUnitsScope(u) : u.agentId === S.me.uid)).length};
+    pend:canApprove() ? S.units.filter(u => u.pendingDup).length : 0, vreq:vwReqs().length, soon:S.units.filter(u => isSoon(u) && (isAdmin() ? myUnitsScope(u) : u.agentId === S.me.uid)).length};
   if(ALERT_PREV && S.me.uid === ALERT_PREV.uid){
     if(now.late > ALERT_PREV.late){ toast(`⚠️ عميل عدّى عليه ${hoursTxt(cfg('firstContactHours'))} من غير تواصل`); beep('late'); }
     else if(now.rep > ALERT_PREV.rep){ toast(`📝 عدّى ميعاد التقرير (${RH()}) — ابعته دلوقتي`); beep('late'); }
+    else if(now.vreq > (ALERT_PREV.vreq || 0)){ toast('🚶 طلب إنهاء معاينة مستني موافقتك — شوفه في الرئيسية'); beep('info'); }
     else if(now.pend > ALERT_PREV.pend){ toast('⏳ وحدة جديدة مستنية موافقتك (متكررة أو لمالك عنده وحدة تانية)'); beep('info'); }
     else if(now.soon > ALERT_PREV.soon){ toast('🏠 وحدة متأجرة قرب ميعاد فضيانها'); beep('info'); }
   }
