@@ -311,6 +311,11 @@ label.chk input{width:20px;height:20px;accent-color:var(--ok)}
 .hotband h3{color:#fff!important;margin:0 2px 10px;font-size:16px}
 .hotband .scard .muted{color:#64748B}
 .scard.req{border:1.5px solid #A7F3D0}
+.reqband{background:linear-gradient(135deg,#1F2937,#000);color:#fff;border:2px solid #D4AF37;border-radius:var(--r);padding:12px 12px 6px;margin-top:12px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.reqband h3{color:#fff!important;margin:0 2px 10px;font-size:16px}
+.reqband .scard.req{background:#fff;color:#0F172A;border:1.5px solid #D4AF37}
+.reqband .scard .muted{color:#64748B}
+.reqband .stripempty{background:transparent;color:#E5E7EB;border:0;padding:0 2px 8px;font-size:12.5px;text-align:right}
 .sc-foot{display:flex;justify-content:space-between;gap:6px;font-size:12px;margin-top:4px}
 .lead.unit.hot{border:2px solid #DC2626;background:#FEF2F2}
 .hotcard{background:linear-gradient(135deg,#FEF2F2,#FEE2E2);border:2px solid #DC2626}
@@ -389,8 +394,8 @@ const CALL_STATUSES = ['interested','followup','viewing','noanswer','notinterest
 const isClosedSt = st => st === 'closed' || st === 'closed_rent';
 const OPEN = new Set(['new','interested','followup','viewing','noanswer']);
 const DAY = 864e5;
-const ROLE_LABEL = {admin:'الأدمن', manager:'مدير مبيعات', leader:'تيم ليدر', sales:'سيلز'};
-const ROLE_RANK = {admin:0, manager:1, leader:2, sales:3};
+const ROLE_LABEL = {admin:'الأدمن', manager:'مدير مبيعات', leader:'تيم ليدر', marketing:'ماركتنج', sales:'سيلز'};
+const ROLE_RANK = {admin:0, manager:1, leader:2, marketing:2, sales:3};
 const BOSS_ROLES = ['admin','manager'];
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 const SOURCES = {facebook:'فيسبوك', instagram:'إنستجرام', dubizzle:'دوبيزل', propertyfinder:'بروبرتي فايندر', aqarmap:'عقار ماب', sheet:'شيت داتا', referral:'ترشيح', walkin:'زيارة للمكتب', broker:'بروكر / شركة تانية', other:'تاني'};
@@ -677,9 +682,9 @@ function reqContact(r, small){
 }
 function requestsStrip(){
   const list = activeReqs();
-  const head = t => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>${t}</h3><button class="btn mini" style="background:#0F766E" onclick="App.newReq()">＋ طلب جديد</button></div>`;
-  if(!list.length) return head('📌 الطلبات') + `<div class="card muted stripempty">مفيش طلبات دلوقتي — دوس "＋ طلب جديد" واكتب أو قول اللي بتدور عليه، والطلب هيظهر للفريق كله والسيستم هيدوّرله على وحدات</div>`;
-  return head(`📌 الطلبات (${list.length})`) + `
+  const head = t => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3>${t}</h3><button class="btn mini" style="background:#D4AF37;color:#111;font-weight:800" onclick="App.newReq()">＋ طلب جديد</button></div>`;
+  if(!list.length) return `<div class="reqband">` + head('📌 الطلبات') + `<div class="stripempty">مفيش طلبات دلوقتي — دوس "＋ طلب جديد" واكتب أو قول اللي بتدور عليه، والطلب هيظهر للفريق كله والسيستم هيدوّرله على وحدات</div></div>`;
+  return `<div class="reqband">` + head(`📌 الطلبات (${list.length})`) + `
   <div class="strip">${list.slice(0, 30).map(r => { const m = reqMatches(r).length, ph = staffInfo(r.by).phone || r.phone || ''; return `<div class="scard req">
     <button class="sc-body" onclick="App.openReq('${r.id}')">
       <div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><span class="ctp" style="--c:${r.kind === 'rent' ? '#1E5BB8' : '#0F766E'}">${REQ_KIND[r.kind] || 'طلب'}</span><span class="muted" style="font-size:11px">${ago(r.at)}</span></div>
@@ -688,7 +693,7 @@ function requestsStrip(){
       <div class="sc-foot"><span style="color:${m ? 'var(--ok)' : 'var(--muted)'};font-weight:800">${m ? m + ' وحدة مناسبة' : 'لسه مفيش وحدة مناسبة'}</span></div>
     </button>
     <div class="row" style="margin-top:6px">${reqContact(r, false)}</div>
-  </div>`; }).join('')}</div>`;
+  </div>`; }).join('')}</div></div>`;
 }
 function reqSheet(r){
   const m = reqMatches(r);
@@ -1006,12 +1011,12 @@ function queryHint(Q){
   const p = [Q.purpose && PURPOSE[Q.purpose], Q.cat ? UNIT_CATS[Q.cat] : Q.res ? 'سكني' : '', Q.beds && (Q.beds + ' غرف'), Q.area && (`${Q.area} م² (±${AREA_TOL})`), Q.furn && FURNISH[Q.furn], Q.text && ('"' + Q.text + '"'), Q.nums.length && Q.nums.join('، ')].filter(Boolean);
   return p.length ? p.join(' · ') : '';
 }
-const canSeeOwner = u => isBoss() || u.agentId === S.me.uid || (isLeader() && u.teamId === S.me.uid);
+const canSeeOwner = u => isBoss() || isMkt() || u.agentId === S.me.uid || (isLeader() && u.teamId === S.me.uid);
 const canEditUnit = u => !u || canSeeOwner(u);
 const soonDays = u => u.status === 'rented' && u.availableFrom ? Math.ceil((u.availableFrom - Date.now()) / DAY) : null;
 const isSoon = u => { const d = soonDays(u); return d !== null && d <= cfg('availRemindDays'); };
 // وحدة متكررة مستنية موافقة المدير: تظهر بس لللي سجلها وفريقه والمديرين
-const canSeePending = u => !u.pendingDup || isBoss() || u.createdBy === S.me.uid || u.agentId === S.me.uid || (isLeader() && u.teamId === S.me.uid);
+const canSeePending = u => !u.pendingDup || canApprove() || u.createdBy === S.me.uid || u.agentId === S.me.uid || (isLeader() && u.teamId === S.me.uid);
 const newUid = () => 'u' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 function myUnitsScope(u){ return isBoss() ? true : isLeader() ? (u.teamId === S.me.uid || u.agentId === S.me.uid) : u.agentId === S.me.uid; }
 function setUnits(pages){
@@ -1050,7 +1055,8 @@ function filteredUnits(){
     if(f.st === 'soon' && !isSoon(u)) return false;
     if(f.st === 'hot' && !u.hot) return false;
     if(f.st === 'pending' && !u.pendingDup) return false;
-    if(f.mine && !myUnitsScope(u)) return false;
+    if(f.mine && !uidsOf(S.me.uid).includes(u.agentId)) return false;
+    if(f.ag && !(f.ag === '_team' ? (u.teamId === S.me.uid || u.agentId === S.me.uid) : uidsOf(f.ag).includes(u.agentId))) return false;
     if(f.beds && String(u.bedrooms || '').trim()[0] !== f.beds && !(f.beds === '5' && parseInt(u.bedrooms) >= 5)) return false;
     if(f.cat && unitCat(u) !== f.cat) return false;
     if(f.proj && projKey(u.project) !== f.proj) return false;
@@ -1092,7 +1098,8 @@ function unitsView(){
   const soon = S.units.filter(u => isSoon(u) && myUnitsScope(u)).length;
   const pend = S.units.filter(u => u.pendingDup && canSeePending(u)).length;
   const extra = [f.cat, f.proj, f.pmin, f.pmax, f.amin, f.amax].filter(Boolean).length;
-  const any = f.purpose !== 'all' || f.furn !== 'all' || f.st !== 'all' || f.mine || f.beds || extra;
+  const any = f.purpose !== 'all' || f.furn !== 'all' || f.st !== 'all' || f.mine || f.ag || f.beds || extra;
+  const agOpts = unitAgentOptions();
   const projs = S.ufOpen ? projectOptions() : [];
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:6px 2px 10px">الوحدات (${S.units.filter(canSeePending).length})</h2>
@@ -1109,7 +1116,9 @@ function unitsView(){
     <div class="chips">${chip('purpose', 'all', 'الكل')}${chip('purpose', 'sale', 'بيع')}${chip('purpose', 'rent', 'إيجار')}
       ${chip('st', 'hot', '🔥 هوت ديل')}${chip('furn', 'furnished', 'مفروش')}${chip('furn', 'empty', 'مش مفروش')}
       ${chip('st', 'rented', 'متأجرة')}${chip('st', 'soon', 'هتفضى قريب')}
-      ${chip('mine', true, isBoss() ? 'كلها' : isLeader() ? 'بتاعة فريقي' : 'بتوعي')}</div>
+      ${chip('mine', true, '👤 وحداتي')}</div>
+    ${agOpts ? `<div class="chips" style="padding-top:2px"><b style="font-size:12.5px;align-self:center;white-space:nowrap">وحدات سيلز:</b>
+      <select class="sel mini" style="margin:0;flex:1;min-width:150px" onchange="App.ufSet('ag', this.value)">${agOpts}</select></div>` : ''}
     <div class="chips" style="padding-top:2px"><button class="chip ${S.ufOpen || extra ? 'on' : ''}" onclick="App.ufToggle()">⚙️ فلاتر أكتر${extra ? `<i>${extra}</i>` : ''}</button>
       ${['1','2','3','4','5'].map(b => chip('beds', b, b === '5' ? '5+ غرف' : b + ' غرف')).join('')}
       ${any ? `<button class="chip" onclick="App.uclear()">امسح الفلاتر ✕</button>` : ''}</div>
@@ -1126,6 +1135,18 @@ function unitsView(){
       <div class="muted" style="font-size:12px;margin-top:6px">السعر تقدر تكتبه أرقام أو "5 مليون" أو "40 ألف". لو مختار "إيجار" فوق، بيقارن بسعر الإيجار.</div>
     </div>` : ''}
     <div id="ulist">${unitListHTML(list)}</div>`;
+}
+// قايمة السيلز اللي ليهم وحدات (للأدمن والمديرين والماركتنج، والتيم ليدر لفريقه)
+function unitAgentOptions(){
+  if(!(isBoss() || isMkt() || isLeader())) return '';
+  const cnt = {}, nm = {};
+  S.units.forEach(u => { if(!u.agentId || !canSeePending(u)) return; if(isLeader() && !(u.teamId === S.me.uid || u.agentId === S.me.uid)) return;
+    cnt[u.agentId] = (cnt[u.agentId] || 0) + 1; if(!nm[u.agentId]) nm[u.agentId] = staffInfo(u.agentId).name || u.agentName || userName(u.agentId); });
+  const ids = Object.keys(cnt).filter(id => !(S.users[id] && S.users[id].replacedBy)).sort((a, b) => String(nm[a]).localeCompare(String(nm[b]), 'ar'));
+  const f = S.uf.ag || '';
+  return `<option value="">${isLeader() ? 'كل الوحدات' : 'كل السيلز'}</option>`
+    + (isLeader() ? `<option value="_team" ${f === '_team' ? 'selected' : ''}>فريقي كله</option>` : '')
+    + ids.map(id => `<option value="${esc(id)}" ${f === id ? 'selected' : ''}>${esc(nm[id])} (${cnt[id]})</option>`).join('');
 }
 function unitListHTML(list){
   list = list || filteredUnits();
@@ -1402,7 +1423,7 @@ function unitPendingBlock(u){
     <div style="font-size:13.5px">سجّلها قبل كده: <b>${esc(d.agentName || d.byName || '—')}</b>${d.code ? ` · كود <span dir="ltr">${esc(d.code)}</span>` : ''}${d.at ? ' · ' + new Date(d.at).toLocaleDateString('ar-EG') : ''}</div>
     <div class="muted" style="font-size:12.5px">طلب تسجيلها: ${esc(d.reqByName || '')}</div>
     ${d.otherId && unitById(d.otherId) ? `<button class="btn ghost mini" style="margin-top:8px" onclick="App.openUnit('${d.otherId}')">شوف الوحدة الأصلية</button>` : ''}
-    ${isBoss() ? `<div class="row" style="margin-top:10px"><button class="btn green" onclick="App.approveDup('${u.id}')">✓ وافق على تسجيلها</button>
+    ${canApprove() ? `<div class="row" style="margin-top:10px"><button class="btn green" onclick="App.approveDup('${u.id}')">✓ وافق على تسجيلها</button>
       <button class="btn danger" id="rejBtn" onclick="App.rejectDup('${u.id}')">ارفض وامسحها</button></div>`
       : `<div class="muted" style="font-size:12.5px;margin-top:6px">مش هتظهر لباقي السيلز لحد ما المدير يوافق.</div>`}
   </div>`;
@@ -2058,19 +2079,21 @@ function makeFirebaseStore(){
    التطبيق
    ===================================================================== */
 const F0 = () => ({q:'', status:'all', sales:'all', special:'', src:'all', kind:'lead', ct:''});
-const UF0 = () => ({q:'', purpose:'all', furn:'all', st:'all', mine:false, beds:'', cat:'', proj:'', pmin:'', pmax:'', amin:'', amax:''});
+const UF0 = () => ({q:'', purpose:'all', furn:'all', st:'all', mine:false, ag:'', beds:'', cat:'', proj:'', pmin:'', pmax:'', amin:'', amax:''});
 const store = firebaseConfig.apiKey ? makeFirebaseStore() : makeDemoStore();
 const S = {
   me:null, authErr:'', users:{}, leads:[], acts:[], tab:null, unsub:[], leadsLoaded:false,
   f:{q:'', status:'all', sales:'all', special:'', src:'all', kind:'lead', ct:''}, limit:60,
   upload:null, dist:null, openId:null, newCred:null, actFilter:'all', regMode:false,
-  units:[], unitPages:{}, uf:{q:'', purpose:'all', furn:'all', st:'all', mine:false, beds:'', cat:'', proj:'', pmin:'', pmax:'', amin:'', amax:''}, ulimit:60, ufOpen:false,
+  units:[], unitPages:{}, uf:{q:'', purpose:'all', furn:'all', st:'all', mine:false, ag:'', beds:'', cat:'', proj:'', pmin:'', pmax:'', amin:'', amax:''}, ulimit:60, ufOpen:false,
   photoCache:{}, ownerCache:{}, inv:null, openUnitId:null, layouts:{}, aliases:{}, staff:{}
 };
 const isAdmin = () => !!S.me && ['admin','manager','leader'].includes(S.me.role);   // شاشات الإدارة (أدمن / مدير / تيم ليدر)
 const isBoss = () => !!S.me && BOSS_ROLES.includes(S.me.role);                     // يشوف كل حاجة
 const isOwner = () => !!S.me && S.me.role === 'admin';
 const isLeader = () => !!S.me && S.me.role === 'leader';
+const isMkt = () => !!S.me && S.me.role === 'marketing';                           // ماركتنج: يشوف ويعدّل الوحدات ويوافق على المتكرر من غير ما يدير الفريق
+const canApprove = () => isBoss() || isLeader() || isMkt();                        // اللي يوافقوا على الوحدات المتكررة
 const myTeam = () => isLeader() ? S.me.uid : null;
 function teamOf(uid){
   if(!uid) return myTeam();
@@ -2078,7 +2101,7 @@ function teamOf(uid){
   if(u.role === 'leader') return u.uid;
   return u.leaderId || null;
 }
-const userName = id => id ? (S.users[id] ? S.users[id].name : (S.me && id === S.me.uid ? S.me.name : '—')) : 'مش متوزع';
+const userName = id => id ? (S.users[id] ? S.users[id].name : (S.me && id === S.me.uid ? S.me.name : ((S.staff || {})[id] && S.staff[id].name) || '—')) : 'مش متوزع';
 // اللي ينفع يتوزع عليهم عملاء (سيلز + تيم ليدرز) في نطاق اللي فاتح
 const activeSales = () => Object.values(S.users).filter(u => (['sales','leader'].includes(u.role) || (u.role === 'manager' && isBoss())) && u.active && !u.replacedBy
   && (isBoss() || u.uid === S.me.uid || u.leaderId === S.me.uid)).sort((a,b) => (ROLE_RANK[a.role] - ROLE_RANK[b.role]) || a.name.localeCompare(b.name, 'ar'));
@@ -2144,7 +2167,16 @@ function render(){
   if(!S.me){ app.innerHTML = store.mode === 'demo' ? demoLoginView() : loginView(); return; }
   const keepScroll = window.scrollY;
   const q = document.activeElement && document.activeElement.id === 'q';
+  // فورم إضافة موظف: البيانات اللي بتتكتب ماتضيعش لما السيستم يحدّث نفسه
+  const ADD_IDS = ['sn', 'sl', 'sp', 'sr', 'sld'], keep = {}, ae = document.activeElement;
+  let keepFocus = null;
+  if(!S._clearAdd) ADD_IDS.forEach(i => { const el = document.getElementById(i); if(el) keep[i] = el.value; });
+  if(!S._clearAdd && ae && ADD_IDS.includes(ae.id)) keepFocus = {id:ae.id, s:ae.selectionStart, e:ae.selectionEnd};
+  S._clearAdd = false;
   app.innerHTML = headerView() + viewingBanner() + `<main>${mainView()}</main>` + navView();
+  Object.entries(keep).forEach(([i, v]) => { const el = document.getElementById(i); if(el) el.value = v; });
+  if(keep.sr !== undefined && $('#sr')) App.newRoleChange();
+  if(keepFocus){ const el = document.getElementById(keepFocus.id); if(el){ el.focus({preventScroll:true}); try{ if(keepFocus.s != null) el.setSelectionRange(keepFocus.s, keepFocus.e); }catch(e){} } }
   if(isBoss() && S.tab === 'team') setTimeout(() => App.syncStaff(), 300);
   if(q){ const el = $('#q'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   if(SHEET_Y == null) window.scrollTo(0, keepScroll);
@@ -2163,7 +2195,7 @@ function navView(){
     ? [['home','الرئيسية',ICON.home],['leads','ليدز',ICON.fire],['data','داتا',ICON.list],['units','الوحدات',ICON.unit],['team','الفريق',ICON.team],['activity','النشاط',ICON.act]]
     : [['today','النهارده',ICON.today],['leads','ليدز',ICON.fire],['data','داتا',ICON.list],['units','الوحدات',ICON.unit]];
   const badges = {};
-  badges[isAdmin() ? 'home' : 'today'] = !isAdmin() ? S.leads.filter(l => isOverdue(l) || isDueToday(l) || isLateFirst(l) || myNudge(l)).length + S.units.filter(u => isSoon(u) && u.agentId === S.me.uid).length + (reportLate() ? 1 : 0)
+  badges[isAdmin() ? 'home' : 'today'] = !isAdmin() ? S.leads.filter(l => isOverdue(l) || isDueToday(l) || isLateFirst(l) || myNudge(l)).length + S.units.filter(u => isSoon(u) && u.agentId === S.me.uid).length + (reportLate() ? 1 : 0) + (canApprove() ? S.units.filter(u => u.pendingDup).length : 0)
     : S.leads.filter(isLateFirst).length + S.units.filter(u => u.pendingDup && canSeePending(u)).length;
   badges.leads = S.leads.filter(l => !l.movedToUnit && isLeadK(l) && l.status === 'new' && !l.lastContactAt && (isAdmin() || l.assignedTo === S.me.uid)).length;
   return `<nav class="nav">${tabs.map(([k, t, ic]) =>
@@ -2665,6 +2697,7 @@ function todayView(){
     </div>
     ${myReportCard()}
     ${(() => { const nl = L.filter(myNudge).sort((a, b) => b.nudge.at - a.nudge.at); return nl.length ? `<h3 style="color:var(--late)">⚠️ تنبيهات من مديرك (${nl.length})</h3>` + nl.map(leadItem).join('') : ''; })()}
+    ${(() => { const pn = canApprove() ? S.units.filter(u => u.pendingDup).length : 0; return pn ? `<button class="alert" style="margin-top:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.unitsPending()"><b>${pn}</b><div>⏳ وحدة متكررة مستنية موافقتك — دوس وشوفها</div></button>` : ''; })()}
     ${starCard()}
     ${hotStrip()}
     ${requestsStrip()}
@@ -2924,7 +2957,7 @@ function teamView(){
   const boss = isBoss(), owner = isOwner();
   const leaders = Object.values(S.users).filter(u => u.role === 'leader' && u.active && !u.replacedBy).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
   const staff = staffList().sort((a, b) => (b.active - a.active) || (ROLE_RANK[a.role] - ROLE_RANK[b.role]) || a.name.localeCompare(b.name, 'ar'));
-  const roleOpts = cur => ['sales', 'leader', ...(owner || cur === 'manager' ? ['manager'] : [])]
+  const roleOpts = cur => ['sales', 'leader', 'marketing', ...(owner || cur === 'manager' ? ['manager'] : [])]
     .map(r => `<option value="${r}" ${cur === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
   const leaderOpts = (cur, self) => `<option value="">من غير تيم ليدر</option>` + leaders.filter(l => l.uid !== self)
     .map(l => `<option value="${l.uid}" ${cur === l.uid ? 'selected' : ''}>فريق ${esc(l.name)}</option>`).join('');
@@ -3240,7 +3273,7 @@ function reelSynth(ac, out, t0, total, mood){
   }
 }
 // الآيفون بيكتم صوت الصفحة لو زرار الصامت مقفول — ده بيخلي المزيكا تشتغل برضه
-let _rlSil = null;
+var _rlSil = null;
 function reelAudioUnlock(){
   try{ if(navigator.audioSession && !(S.reel && S.reel.mic)) navigator.audioSession.type = 'playback'; }catch(e){}
   try{ if(!_rlSil){ _rlSil = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); _rlSil.loop = true; _rlSil.setAttribute('playsinline', ''); }
@@ -3683,7 +3716,7 @@ const App = window.App = {
     const role = isBoss() ? $('#sr').value : 'sales';
     const leaderId = isBoss() ? (role === 'sales' ? ($('#sld').value || null) : null) : S.me.uid;
     const b = $('#addBtn'); b.disabled = true; b.textContent = 'بيضيف...';
-    try{ await store.createSales({name, login, password:pw, role, leaderId}); S.newCred = {name, login, pw}; render(); }
+    try{ await store.createSales({name, login, password:pw, role, leaderId}); S.newCred = {name, login, pw}; S._clearAdd = true; render(); }
     catch(err){ toast(fbError(err)); b.disabled = false; b.textContent = 'إضافة'; }
   },
   newRoleChange(){ const w = $('#slWrap'); if(w) w.classList.toggle('hidden', $('#sr').value !== 'sales'); },
@@ -3897,7 +3930,7 @@ Object.assign(App, {
       availableFrom:st === 'rented' && g('#uAv') ? new Date(g('#uAv') + 'T12:00').getTime() : null, notes:g('#uNotes'),
       loc:(() => { try{ return g('#uLoc') ? JSON.parse(g('#uLoc')) : (old && old.loc) || null; }catch(e){ return (old && old.loc) || null; } })(),
       agentId, agentName:agentUser ? agentUser.name : (agentId === S.me.uid ? S.me.name : (old && old.agentId === agentId ? old.agentName : '')),
-      teamId:agentId ? teamOf(agentId) : (isLeader() ? S.me.uid : null)};
+      teamId:agentId ? (old && old.agentId === agentId && !S.users[agentId] ? (old.teamId || null) : teamOf(agentId)) : (isLeader() ? S.me.uid : null)};
     const owner = {ownerName:g('#uOName'), ownerPhone:normalizePhone(g('#uOPhone')), otherPhone:g('#uOther'), agentId:data.agentId, teamId:data.teamId};
     if(!isBoss() && !data.agentId && !isLeader()) return toast('لازم الوحدة تبقى مع سيلز');
     // منع التكرار: لو الوحدة (أو رقم مالكها أو صورها) متسجلة قبل كده
@@ -3914,11 +3947,11 @@ Object.assign(App, {
         S._dupAck = sig;
         if(box){ box.classList.remove('hidden'); box.innerHTML = `<b>${dup.same ? '⛔ الوحدة دي متسجلة قبل كده' : '⚠️ المالك ده عنده وحدة تانية على السيستم'}</b><div>${esc(dup.reason)}</div>
           <div>سجّلها: <b>${esc(dup.u.agentName || userName(dup.u.createdBy))}</b>${dup.u.code ? ` · كود <span dir="ltr">${esc(dup.u.code)}</span>` : ''}${dup.u.createdAt ? ' · ' + new Date(dup.u.createdAt).toLocaleDateString('ar-EG') : ''}</div>
-          <div style="margin-top:6px">${isBoss() ? 'لو متأكد إنها تتسجل تاني، دوس حفظ مرة كمان.' : (dup.same ? 'لو لازم تتسجل تاني، دوس "ابعتها للمدير يوافق" — مش هتظهر للباقي غير بعد موافقته.' : 'لو دي وحدة مختلفة لنفس المالك، دوس "ابعتها للمدير يوافق" — الأدمن هيوصله إشعار ويوافق عليها.')}</div>`; box.scrollIntoView({block:'center'}); }
-        const sb = $('#uSave'); if(sb) sb.textContent = isBoss() ? 'متكررة — دوس تاني للحفظ' : 'ابعتها للمدير يوافق';
+          <div style="margin-top:6px">${canApprove() ? 'لو متأكد إنها تتسجل تاني، دوس حفظ مرة كمان.' : (dup.same ? 'لو لازم تتسجل تاني، دوس "ابعتها للمدير يوافق" — مش هتظهر للباقي غير بعد موافقته.' : 'لو دي وحدة مختلفة لنفس المالك، دوس "ابعتها للمدير يوافق" — الأدمن هيوصله إشعار ويوافق عليها.')}</div>`; box.scrollIntoView({block:'center'}); }
+        const sb = $('#uSave'); if(sb) sb.textContent = canApprove() ? 'متكررة — دوس تاني للحفظ' : 'ابعتها للمدير يوافق';
         return;
       }
-      if(!isBoss()) data.pendingDup = dupInfo(dup);
+      if(!canApprove()) data.pendingDup = dupInfo(dup);
       else data.dupApproved = {by:S.me.uid, byName:S.me.name, at:Date.now(), reason:dup.reason};
     }
     S._dupAck = null;
@@ -4517,7 +4550,7 @@ Object.assign(App, {
   async hotOff(id){ const u = unitById(id); if(!u) return; try{ await store.saveUnit(u.page, id, {hot:null, ...upStamp('شالها من الهوت ديل')}); toast('اتشالت من الهوت ديل'); setTimeout(() => App.openUnit(id), 150); }catch(e){ toast(fbError(e)); } },
   /* موافقة المدير على الوحدة المتكررة */
   async approveDup(id){
-    const u = unitById(id); if(!u || !isBoss()) return;
+    const u = unitById(id); if(!u || !canApprove()) return;
     try{
       await store.saveUnit(u.page, id, {pendingDup:null, dupApproved:{by:S.me.uid, byName:S.me.name, at:Date.now(), reason:(u.pendingDup || {}).reason || ''}});
       await store.addActivity({type:'upload', at:Date.now(), by:S.me.uid, byName:S.me.name, note:`✓ ${S.me.name} وافق على تسجيل وحدة متكررة: ${[u.type, u.project, u.unitNo].filter(Boolean).join(' · ')} (طلب ${(u.pendingDup || {}).reqByName || ''})`, teamId:u.teamId || null}).catch(() => {});
@@ -4525,7 +4558,7 @@ Object.assign(App, {
     }catch(e){ toast(fbError(e)); }
   },
   async rejectDup(id){
-    const u = unitById(id), b = $('#rejBtn'); if(!u || !isBoss()) return;
+    const u = unitById(id), b = $('#rejBtn'); if(!u || !canApprove()) return;
     if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'متأكد؟ دوس تاني'; return; }
     try{
       await store.deleteUnit(u.page, id, u.photos || []);
@@ -4783,7 +4816,7 @@ setInterval(() => {
   if(!S.me || !S.leadsLoaded) return;
   const mine = l => isAdmin() || l.assignedTo === S.me.uid;
   const now = {late:S.leads.filter(l => mine(l) && isLateFirst(l)).length, rep:reportLate() ? 1 : 0,
-    pend:isBoss() ? S.units.filter(u => u.pendingDup).length : 0, soon:S.units.filter(u => isSoon(u) && (isAdmin() ? myUnitsScope(u) : u.agentId === S.me.uid)).length};
+    pend:canApprove() ? S.units.filter(u => u.pendingDup).length : 0, soon:S.units.filter(u => isSoon(u) && (isAdmin() ? myUnitsScope(u) : u.agentId === S.me.uid)).length};
   if(ALERT_PREV && S.me.uid === ALERT_PREV.uid){
     if(now.late > ALERT_PREV.late){ toast(`⚠️ عميل عدّى عليه ${hoursTxt(cfg('firstContactHours'))} من غير تواصل`); beep('late'); }
     else if(now.rep > ALERT_PREV.rep){ toast(`📝 عدّى ميعاد التقرير (${RH()}) — ابعته دلوقتي`); beep('late'); }
