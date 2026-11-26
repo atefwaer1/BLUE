@@ -1848,6 +1848,7 @@ function makeDemoStore(){
     async deleteLeads(ids){ ids.forEach(id => delete db.leads[id]); persist(); },
     async addActivity(a){ db.activities.push(clone(a)); persist(); },
     onUnits(cb){ return sub(() => cb(clone(db.unitPages || {}))); },
+    async userActs(uids){ return clone((db.activities || []).filter(a => uids.includes(a.by))); },
     async addUnit(id, data){
       db.unitPages = db.unitPages || {};
       let pid = Object.keys(db.unitPages).find(p => !p.startsWith('meta_') && Object.keys(db.unitPages[p].units || {}).length < UNIT_CAP);
@@ -1980,6 +1981,7 @@ function makeFirebaseStore(){
       for(const part of chunks(ids)){ const b = db.batch(); part.forEach(id => b.delete(db.collection('leads').doc(id))); await b.commit(); }
     },
     async addActivity(a){ await db.collection('activities').add(a); },
+    async userActs(uids){ const s = await db.collection('activities').where('by', 'in', uids.slice(0, 10)).limit(1500).get(); return s.docs.map(d => ({id:d.id, ...d.data()})); },
     onUnits(cb){
       return db.collection('unitPages').onSnapshot(s => { const o = {}; s.forEach(d => o[d.id] = d.data()); cb(o); }, onErr);
     },
@@ -2197,7 +2199,7 @@ function navView(){
   const badges = {};
   badges[isAdmin() ? 'home' : 'today'] = !isAdmin() ? S.leads.filter(l => isOverdue(l) || isDueToday(l) || isLateFirst(l) || myNudge(l)).length + S.units.filter(u => isSoon(u) && u.agentId === S.me.uid).length + (reportLate() ? 1 : 0) + (canApprove() ? S.units.filter(u => u.pendingDup).length : 0)
     : S.leads.filter(isLateFirst).length + S.units.filter(u => u.pendingDup && canSeePending(u)).length + vwReqs().length;
-  badges.leads = S.leads.filter(l => !l.movedToUnit && isLeadK(l) && l.status === 'new' && !l.lastContactAt && (isAdmin() || l.assignedTo === S.me.uid)).length;
+  badges.leads = S.leads.filter(l => !l.movedToUnit && isLeadK(l) && l.status === 'new' && !l.lastContactAt && ((isAdmin() && !isLeader()) || l.assignedTo === S.me.uid)).length;
   return `<nav class="nav">${tabs.map(([k, t, ic]) =>
     `<button class="${S.tab === k || (k === 'leads' && S.tab === 'leads') ? 'on' : ''}${k === 'leads' ? ' navlead' : ''}" onclick="App.go('${k}')">${ic}${t}${badges[k] ? `<span class="dot${k === 'leads' ? ' fire' : ''}">${badges[k]}</span>` : ''}</button>`).join('')}</nav>`;
 }
@@ -2611,17 +2613,20 @@ function adminHomeBase(){
 
 /* ---------------- قائمة العملاء ---------------- */
 const SPECIALS = {late24:'محدش كلّمهم خلال 24 ساعة', agreed:'اتفقوا على العمولة', notcalled:'لسه ماتكلموش', overdue:'متابعات متأخرة', today:'اتكلموا النهارده', stale:'متأخرين في التواصل', unassigned:'مش متوزعين', due:'متابعات النهارده'};
+// التيم ليدر: قايمته فيها عملاءه هو بس، وعملاء فريقه من "كل عملاء الفريق" أو اسم السيلز (أو من الاختصارات زي "محدش كلّمهم")
+const leaderScope = l => !isLeader() || S.f.sales === '_team' || (S.f.sales !== 'all' ? true : (S.f.special ? true : l.assignedTo === S.me.uid));
 function filteredLeads(){
   const {q, status, sales, special} = S.f, t0 = startOfDay();
   const qq = q.trim().toLowerCase(), qd = normalizePhone(q);
   const kind = S.f.kind || 'lead';
   return S.leads.filter(l => {
+    if(!leaderScope(l)) return false;
     if(l.movedToUnit && !qq) return false;
     if(kind === 'lead' && !isLeadK(l)) return false;
     if(kind === 'data' && !isData(l)) return false;
     if(S.f.ct && l.clientType !== S.f.ct) return false;
     if(status !== 'all' && l.status !== status) return false;
-    if(isAdmin() && sales !== 'all' && l.assignedTo !== sales) return false;
+    if(isAdmin() && sales !== 'all' && sales !== '_team' && l.assignedTo !== sales) return false;
     if(special === 'notcalled' && !(l.assignedTo && l.status === 'new')) return false;
     if(special === 'overdue' && !isOverdue(l)) return false;
     if(special === 'today' && !(l.lastContactAt >= t0)) return false;
@@ -2676,7 +2681,7 @@ function leadItem(l){
 function leadsView(){
   const kind = S.f.kind || 'lead';
   if(kind === 'data' && S.upload && isAdmin()) return `<button class="btn ghost mini" style="margin-bottom:8px" onclick="App.cancelUpload()">→ رجوع للداتا</button>` + uploadView();
-  const live = S.leads.filter(l => !l.movedToUnit);
+  const live = S.leads.filter(l => !l.movedToUnit && leaderScope(l));
   const pool = live.filter(l => kind === 'all' ? true : kind === 'data' ? isData(l) : isLeadK(l));
   const counts = {}; pool.forEach(l => counts[l.status] = (counts[l.status] || 0) + 1);
   const chip = (k, label, n) => `<button class="chip ${S.f.status === k ? 'on' : ''}" onclick="App.status('${k}')">${label}${n != null ? `<i>${n}</i>` : ''}</button>`;
@@ -2684,7 +2689,7 @@ function leadsView(){
   const nLead = live.filter(isLeadK).length, nData = live.filter(isData).length;
   const freshLeads = live.filter(l => isLeadK(l) && l.status === 'new' && !l.lastContactAt).length;
   const today0 = startOfDay(), leadsToday = live.filter(l => isLeadK(l) && (l.createdAt || 0) >= today0).length;
-  const who = isBoss() ? '' : isLeader() ? ' الفريق' : '';
+  const who = isLeader() && (S.f.sales === '_team' || S.f.special) ? ' الفريق' : '';
   return `
     <div class="seg"><button class="${kind === 'lead' ? 'on lead' : ''}" onclick="App.kind('lead')">🔥 ليدز<i>${nLead}</i></button>
       <button class="${kind === 'data' ? 'on data' : ''}" onclick="App.kind('data')">📋 داتا<i>${nData}</i></button>
@@ -2694,12 +2699,12 @@ function leadsView(){
       <div class="lh-n"><b>${freshLeads}</b><span>لسه محدش كلّمهم</span></div><div class="lh-n"><b>${leadsToday}</b><span>وصلوا النهارده</span></div></div>`
     : kind === 'data' ? `<div class="datahero"><div style="flex:1"><b>📋 الداتا${who}</b><div class="muted" style="font-size:12.5px">عملاء من شيتات الداتا (الفلتريشن)</div></div>
       ${isAdmin() ? `<label class="btn mini">⬆ رفع شيت داتا<input type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="App.file(this.files[0])"></label>` : ''}</div>` : ''}
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px"><h2 style="margin:0 2px">${kind === 'lead' ? 'الليدز' : kind === 'data' ? 'عملاء الداتا' : isBoss() ? 'كل العملاء' : isLeader() ? 'عملاء الفريق' : 'عملائي'}</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px"><h2 style="margin:0 2px">${kind === 'lead' ? 'الليدز' : kind === 'data' ? 'عملاء الداتا' : isBoss() ? 'كل العملاء' : isLeader() && S.f.sales === '_team' ? 'عملاء الفريق' : 'عملائي'}</h2>
       <button class="btn mini" onclick="App.newLead()">＋ ${kind === 'data' ? 'عميل داتا' : 'ليد جديد'}</button></div>
     <input class="search" id="q" type="search" style="margin-top:10px" placeholder="دوّر بالاسم أو الرقم أو المشروع..." value="${esc(S.f.q)}" oninput="App.search(this.value)">
     ${isAdmin() ? `<select class="sel" onchange="App.sales(this.value)">
-      <option value="all">كل السيلز</option>
-      ${salesList().map(u => `<option value="${u.uid}" ${S.f.sales === u.uid ? 'selected' : ''}>${esc(u.name)}${u.active ? '' : ' (متوقف)'}</option>`).join('')}
+      ${isLeader() ? `<option value="all">👤 عملائي أنا بس</option><option value="_team" ${S.f.sales === '_team' ? 'selected' : ''}>👥 كل عملاء الفريق</option>` : '<option value="all">كل السيلز</option>'}
+      ${salesList().filter(u => !isLeader() || u.uid !== S.me.uid).map(u => `<option value="${u.uid}" ${S.f.sales === u.uid ? 'selected' : ''}>${esc(u.name)}${u.active ? '' : ' (متوقف)'}</option>`).join('')}
     </select>` : ''}
     ${kind !== 'data' ? `<select class="sel" onchange="App.src(this.value)"><option value="all">كل المصادر</option>${opts(Object.fromEntries(Object.entries(SOURCES).filter(([k]) => kind === 'all' || k !== 'sheet')), S.f.src)}<option value="_" ${S.f.src === '_' ? 'selected' : ''}>مش متحدد</option></select>` : ''}
     <div class="chips">${ctChip('', 'كل الأنواع')}${Object.entries(CT_SHORT).map(([k, v]) => ctChip(k, v)).join('')}</div>
@@ -3074,7 +3079,53 @@ function activityView(){
   return `<h2>النشاط</h2>
     <select class="sel" style="margin:0 0 10px" onchange="App.actFilter(this.value)">
       <option value="all">كل الناس</option>${sales.map(u => `<option value="${u.uid}" ${S.actFilter === u.uid ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
-    <div class="card" style="padding:2px 14px">${list.length ? list.map(line).join('') : `<div class="empty">مفيش نشاط لسه</div>`}</div>`;
+    <div class="muted" style="font-size:12.5px;margin:-4px 2px 8px">دوس على أي نشاط عشان تشوف كل نشاط الشخص ده</div>
+    <div class="card" style="padding:2px 14px">${list.length ? list.map(a => line(a).replace('<div class="act">', `<div class="act" style="cursor:pointer" onclick="if(!event.target.closest('a,button')) App.person('${esc(a.by || '')}')">`)).join('') : `<div class="empty">مفيش نشاط لسه</div>`}</div>`;
+}
+/* ---------------- صفحة نشاط شخص (كل اللي عمله في فترة) ---------------- */
+const PER_RANGES = {today:'النهارده', week:'آخر 7 أيام', month:'آخر 30 يوم', all:'الكل'};
+function personItems(uid){
+  const ids = uidsOf(uid), mine = x => ids.includes(x), out = [], seen = new Set();
+  // المكالمات والملاحظات من سجل كل عميل (كامل، مش آخر 300 بس)
+  S.leads.forEach(l => (l.history || []).forEach(h => {
+    if(!mine(h.by) || h.status === 'assign' || !h.at) return;
+    seen.add(l.id + '|' + h.at);
+    out.push({k:'call', at:h.at, lead:l, h});
+  }));
+  const acts = [...S.acts, ...((S._pActs || {})[uid] || [])], dup = new Set();
+  acts.forEach(a => {
+    if(!mine(a.by) || !a.at) return;
+    const key = a.id || (a.at + '|' + a.note); if(dup.has(key)) return; dup.add(key);
+    if(a.type === 'call' && (seen.has(a.leadId + '|' + a.at) || leadById(a.leadId))) return;   // موجودة من سجل العميل
+    out.push({k:a.type || 'other', at:a.at, a});
+  });
+  S.units.forEach(u => { if(mine(u.createdBy) && u.createdAt && !acts.some(a => a.type === 'upload' && mine(a.by) && Math.abs(a.at - u.createdAt) < 5000))
+    out.push({k:'unit', at:u.createdAt, u}); });
+  return out.sort((a, b) => b.at - a.at);
+}
+function personSheet(uid){
+  const r = S._pRange || 'week', t0 = r === 'today' ? startOfDay() : r === 'week' ? Date.now() - 7 * DAY : r === 'month' ? Date.now() - 30 * DAY : 0;
+  const all = personItems(uid), list = all.filter(x => x.at >= t0), nm = staffInfo(uid).name || userName(uid);
+  const c = {call:0, viewing:0, unit:0, closed:0, report:0};
+  list.forEach(x => { if(x.k === 'call'){ c.call++; if(isClosedSt(x.h.status)) c.closed++; } else if(x.k === 'viewing' && /طلع معاينة/.test(x.a.note || '')) c.viewing++;
+    else if(x.k === 'unit' || (x.k === 'upload' && /وحدة/.test(x.a.note || '') && !/موافقة|وافق|رفض/.test(x.a.note || ''))) c.unit++; else if(x.k === 'report') c.report++; });
+  const lnk = (id, t) => `<a href="javascript:void 0" onclick="App.open('${id}')" style="color:var(--navy);font-weight:700">${esc(t || 'عميل')}</a>`;
+  const row = x => {
+    if(x.k === 'call'){ const s = STATUSES[x.h.status] || {label:x.h.status || 'ملاحظة', color:'#64748B'};
+      return `<div class="act"><div class="ic" style="color:${s.color}">${ICON.phone.replace('<svg', '<svg width="18" height="18"')}</div><div class="tx">
+        كلّم ${lnk(x.lead.id, x.lead.name)} — <span style="color:${s.color};font-weight:700">${s.label}</span>
+        ${x.h.note ? `<div class="note">${esc(x.h.note)}</div>` : ''}${voiceBtn(x.h.voice)}<div class="t">${fmt(x.at)} · ${ago(x.at)}</div></div></div>`; }
+    if(x.k === 'unit') return `<div class="act"><div class="ic">🏠</div><div class="tx">سجّل وحدة: <a href="javascript:void 0" onclick="App.openUnit('${x.u.id}')" style="color:var(--navy);font-weight:700">${esc([x.u.type, x.u.project, x.u.unitNo].filter(Boolean).join(' · ') || 'وحدة')}</a><div class="t">${fmt(x.at)} · ${ago(x.at)}</div></div></div>`;
+    const a = x.a, ic = x.k === 'viewing' ? '🚶' : x.k === 'report' ? '📝' : x.k === 'assign' ? '⇄' : x.k === 'call' ? '📞' : '•';
+    return `<div class="act"><div class="ic">${ic}</div><div class="tx">${a.leadId && leadById(a.leadId) ? lnk(a.leadId, a.leadName) + ' · ' : ''}<span style="white-space:pre-wrap">${esc(a.note || '')}</span>${a.lat ? ` · <a href="${mapsUrl(a)}" target="_blank" rel="noopener" style="color:var(--navy)">المكان</a>` : ''}<div class="t">${fmt(a.at)} · ${ago(a.at)}</div></div></div>`;
+  };
+  const kpi = (n, t) => `<div class="kpi"><b>${n}</b><span>${t}</span></div>`;
+  return `<div class="sheet-h"><div style="display:flex;align-items:center;gap:10px">${avatarHtml(uid, 40)}<div><h2 style="margin:0">${esc(nm)}</h2><span class="muted" style="font-size:12.5px">كل نشاطه · ${PER_RANGES[r]}</span></div></div><button class="x" onclick="App.close()">×</button></div>
+    <div class="chips" style="margin-top:8px">${Object.entries(PER_RANGES).map(([k, v]) => `<button class="chip ${r === k ? 'on' : ''}" onclick="App.personRange('${esc(uid)}', '${k}')">${v}</button>`).join('')}</div>
+    <div class="kpis" style="margin-top:6px">${kpi(c.call, 'مكالمات')}${kpi(c.viewing, 'معاينات')}${kpi(c.unit, 'وحدات سجّلها')}${kpi(c.closed, 'قفلات')}</div>
+    ${S._pLoading ? '<div class="muted" style="font-size:12.5px;margin-top:8px">بيحمّل النشاط القديم...</div>' : ''}
+    <div class="card" style="padding:2px 14px;margin-top:10px">${list.length ? list.slice(0, 400).map(row).join('') : `<div class="empty">مفيش نشاط في الفترة دي</div>`}</div>
+    ${list.length > 400 ? '<div class="muted" style="font-size:12px;text-align:center;margin-top:6px">ظاهر آخر 400 نشاط — اختار فترة أقصر</div>' : ''}`;
 }
 
 /* ---------------- نجم اليوم (النقط) ---------------- */
@@ -3533,6 +3584,17 @@ const App = window.App = {
   sales(v){ S.f.sales = v; render(); },
   more(){ S.limit += 100; render(); },
   actFilter(v){ S.actFilter = v; render(); },
+  async person(uid){
+    if(!uid || !isAdmin()) return;
+    S._pRange = S._pRange || 'week'; S._pActs = S._pActs || {}; S._pUid = uid;
+    const need = !S._pActs[uid]; S._pLoading = need;
+    openSheet(personSheet(uid));
+    if(!need) return;
+    try{ S._pActs[uid] = await store.userActs(uidsOf(uid)); }catch(e){ S._pActs[uid] = []; }
+    S._pLoading = false;
+    if(S._pUid === uid && !$('#sheet').classList.contains('hidden')){ S._keepSheetScroll = true; openSheet(personSheet(uid)); }
+  },
+  personRange(uid, r){ S._pRange = r; openSheet(personSheet(uid)); },
   src(v){ S.f.src = v; S.limit = 60; render(); },
   bySrc(k){ S.f = {...F0(), src:k === 'sheet' ? 'all' : k, kind:k === 'sheet' ? 'data' : 'lead'}; S._keepFilter = true; App.go(k === 'sheet' ? 'data' : 'leads'); },
   unitsSoon(){ S.uf = {...UF0(), st:'soon'}; App.go('units'); },
