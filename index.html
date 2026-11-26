@@ -3242,7 +3242,7 @@ function reelSynth(ac, out, t0, total, mood){
 // الآيفون بيكتم صوت الصفحة لو زرار الصامت مقفول — ده بيخلي المزيكا تشتغل برضه
 let _rlSil = null;
 function reelAudioUnlock(){
-  try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
+  try{ if(navigator.audioSession && !(S.reel && S.reel.mic)) navigator.audioSession.type = 'playback'; }catch(e){}
   try{ if(!_rlSil){ _rlSil = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='); _rlSil.loop = true; _rlSil.setAttribute('playsinline', ''); }
     _rlSil.play().catch(() => {}); }catch(e){}
 }
@@ -3498,6 +3498,8 @@ const App = window.App = {
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('الجهاز أو المتصفح ده مش بيدعم تسجيل الصوت');
     if(S.dic) App.dictate();
     let stream;
+    try{ if(navigator.audioSession) navigator.audioSession.type = 'play-and-record'; }catch(e){}
+    if(typeof _rlSil !== 'undefined' && _rlSil){ try{ _rlSil.pause(); }catch(e){} }
     try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
     catch(e){ return toast('لازم تسمح للميكروفون عشان تسجّل فويس'); }
     const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/webm'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
@@ -4077,13 +4079,20 @@ Object.assign(App, {
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('الجهاز ده مش بيسجّل من هنا — ارفع تسجيل بدل كده');
     if(R.run) R.run.stop();
     let stream;
+    if(S._rlTaste){ try{ S._rlTaste.close(); }catch(e){} S._rlTaste = null; }
+    if(_rlSil){ try{ _rlSil.pause(); }catch(e){} }
+    try{ if(navigator.audioSession) navigator.audioSession.type = 'play-and-record'; }catch(e){}
     try{ stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}}); }
-    catch(e){ return toast('لازم تسمح للميكروفون عشان تسجّل'); }
+    catch(e){
+      try{ if(navigator.audioSession) navigator.audioSession.type = 'auto'; }catch(x){}
+      if(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) return toast('الميكروفون مقفول للـ CRM — افتحه من الإعدادات وجرّب تاني', 5000);
+      return toast('الميكروفون مش متاح دلوقتي — اقفل أي مكالمة أو تطبيق بيستخدمه وجرّب تاني', 5000);
+    }
     const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
     let mr; try{ mr = new MediaRecorder(stream, mime ? {mimeType:mime, audioBitsPerSecond:128000} : {}); }catch(e){ mr = new MediaRecorder(stream); }
     const chunks = [], mic = {mr, stream, start:Date.now()};
     mr.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
-    mr.onstop = () => { clearInterval(mic.timer); stream.getTracks().forEach(t => t.stop());
+    mr.onstop = () => { clearInterval(mic.timer); stream.getTracks().forEach(t => t.stop()); try{ if(navigator.audioSession) navigator.audioSession.type = 'auto'; }catch(e){}
       if(mic.discard || S.reel !== R) return; R.mic = null;
       App.reelVoiceBlob(new Blob(chunks, {type:(mr.mimeType || mime || 'audio/webm').split(';')[0]})); };
     mic.timer = setInterval(() => { const t = $('#rlRecT'); if(t) t.textContent = mmss(Math.round((Date.now() - mic.start) / 1000)); if(Date.now() - mic.start > 120000) App.reelRecStop(); }, 400);
