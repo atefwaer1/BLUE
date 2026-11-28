@@ -386,13 +386,21 @@ const STATUSES = {
   noanswer:      {label:'ماردش',         color:'#7C3AED'},
   notinterested: {label:'مش مهتم',       color:'#DC2626'},
   wrong:         {label:'رقم غلط',       color:'#475569'},
-  viewing:       {label:'معاينة',         color:'#0891B2'},
-  closed:        {label:'اتقفلت بيع',     color:'#0F766E'},
-  closed_rent:   {label:'اتقفلت إيجار',   color:'#047857'}
+  viewing:       {label:'معاد معاينة',     color:'#0891B2'},
+  viewed:        {label:'تمت المعاينة',    color:'#0E7490'},
+  unavailable:   {label:'الوحدة مبقتش متاحة', color:'#9F1239'},
+  closed:        {label:'قفلة بيع ✓',      color:'#0F766E'},
+  closed_rent:   {label:'قفلة إيجار ✓',    color:'#047857'}
 };
-const CALL_STATUSES = ['interested','followup','viewing','noanswer','notinterested','wrong','closed','closed_rent'];
+// القفلة الحقيقية مبقتش من نتايج المكالمة — ليها زرار لوحدها "تسجيل قفلة" عشان محدش يختارها بالغلط
+const CALL_STATUSES = ['interested','followup','viewing','viewed','noanswer','notinterested','wrong','unavailable'];
 const isClosedSt = st => st === 'closed' || st === 'closed_rent';
-const OPEN = new Set(['new','interested','followup','viewing','noanswer']);
+const OPEN = new Set(['new','interested','followup','viewing','viewed','noanswer','unavailable']);
+// الأرشيف: العملاء دول بيختفوا من القايمة الرئيسية (من غير ما يتمسحوا)، ويرجعوا بعد 3 شهور نجرّبهم تاني
+const ARCHIVED = new Set(['notinterested','wrong']);
+const REVIVE_DAYS = 90;
+const isArch = l => ARCHIVED.has(l.status);
+const isRevive = l => isArch(l) && (l.lastContactAt || l.createdAt || 0) < Date.now() - REVIVE_DAYS * DAY;
 const DAY = 864e5;
 const ROLE_LABEL = {admin:'الأدمن', manager:'مدير مبيعات', leader:'تيم ليدر', marketing:'ماركتنج', sales:'سيلز'};
 const ROLE_RANK = {admin:0, manager:1, leader:2, marketing:2, sales:3};
@@ -1026,6 +1034,9 @@ function setUnits(pages){
   S.aliases = {}; Object.entries((pages && pages[LAYOUT_DOC] && pages[LAYOUT_DOC].aliases) || {}).forEach(([k, v]) => { if(v && v !== k) S.aliases[k] = v; });
   S.settings = (pages && pages[SETTINGS_DOC]) || {}; applyTheme(S.settings.theme);
   S.scores = {}; Object.entries(pages || {}).forEach(([pid, p]) => { if(pid.startsWith(SCORE_DOC)) Object.assign(S.scores, (p && p.days) || {}); }); if(S.me) starWatch();
+  S.pend = (pages && pages[PEND_DOC] && pages[PEND_DOC].items) || {};
+  S.comm = (pages && pages[COMM_DOC] && pages[COMM_DOC].items) || {};
+  S.proxy = (pages && pages[PROXY_DOC] && pages[PROXY_DOC].items) || {};
   S.reports = {}; S.reportDocs = [];
   Object.entries(pages || {}).forEach(([pid, p]) => { if(!pid.startsWith(REPORT_DOC)) return; S.reportDocs.push(pid); Object.entries((p && p.reports) || {}).forEach(([d, m]) => { S.reports[d] = {...(S.reports[d] || {}), ...m}; }); });
   Object.entries(pages || {}).forEach(([pid, p]) => {
@@ -2159,7 +2170,10 @@ function onAuth(me){
       const mine = [dayKey(), dayKey(Date.now() - DAY)].flatMap(d => repReplies(reportOf(S.me.uid, d))).filter(x => x.by !== S.me.uid && x.at > Math.max(seen, S._repNotified || 0)).sort((a, b) => b.at - a.at);
       if(mine.length){ S._repNotified = mine[0].at; toast(`💬 ${mine[0].byName} ردّ على تقريرك: ${mine[0].text.slice(0, 60)}`); beep('nudge'); } }
     if(hadUnits){ const nr = (S.requests || []).filter(r => !prevReq.has(r.id) && r.by !== S.me.uid && r.active !== false); if(nr.length){ toast(`📌 طلب جديد من ${nr[0].byName}: ${nr[0].text.slice(0, 60)}`); beep('info'); } }
-    if(isBoss()) (S.requests || []).filter(r => r.active === false && Date.now() - (r.closedAt || r.at || 0) > 30 * DAY).slice(0, 20).forEach(r => store.delMetaKey(REQ_DOC, 'requests', r.id).catch(() => {})); S.ownerCache = {}; if(['units','today','home','leads','data'].includes(S.tab)) render(); if(isBoss()){ setTimeout(backfillOwnerKeys, 3000); pruneReports(); } }));
+    if(isBoss()) (S.requests || []).filter(r => r.active === false && Date.now() - (r.closedAt || r.at || 0) > 30 * DAY).slice(0, 20).forEach(r => store.delMetaKey(REQ_DOC, 'requests', r.id).catch(() => {}));
+    // تنضيف: النقط اللي اتراجعت والملاحظات اللي عدّى عليها أكتر من شهرين
+    if(isBoss()){ pendAll().filter(p => p.st !== 'pending' && Date.now() - (p.revAt || p.at || 0) > 60 * DAY).slice(0, 30).forEach(p => store.delMetaKey(PEND_DOC, 'items', p.id).catch(() => {}));
+      Object.entries(S.comm || {}).filter(([, c]) => c && Date.now() - (c.at || 0) > 60 * DAY).slice(0, 30).forEach(([id]) => store.delMetaKey(COMM_DOC, 'items', id).catch(() => {})); } S.ownerCache = {}; if(['units','today','home','leads','data'].includes(S.tab)) render(); if(isBoss()){ setTimeout(backfillOwnerKeys, 3000); pruneReports(); } }));
   render();
 }
 
@@ -2179,7 +2193,7 @@ function render(){
   Object.entries(keep).forEach(([i, v]) => { const el = document.getElementById(i); if(el) el.value = v; });
   if(keep.sr !== undefined && $('#sr')) App.newRoleChange();
   if(keepFocus){ const el = document.getElementById(keepFocus.id); if(el){ el.focus({preventScroll:true}); try{ if(keepFocus.s != null) el.setSelectionRange(keepFocus.s, keepFocus.e); }catch(e){} } }
-  if(isBoss() && S.tab === 'team') setTimeout(() => App.syncStaff(), 300);
+  if(isBoss()) setTimeout(() => App.syncStaff(), 300);   // أسماء الفريق لازم تكون متاحة للكل (الإعلانات، المعاينة، الزميل البديل)
   if(q){ const el = $('#q'); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   if(SHEET_Y == null) window.scrollTo(0, keepScroll);
 }
@@ -2288,16 +2302,36 @@ function vwOwnControls(l){
   if(v.endReq) return `<div class="card" style="margin-top:8px;background:#FFFBEB;border-color:#FCD34D;font-size:13px">⏳ طلب إنهاء المعاينة اتبعت لمديرك ${minsAgo(v.endReq.at)} ومستني موافقته.<div class="muted" style="font-size:12px">ولو رجعت المكتب وفتحت الأبليكيشن، هتتقفل لوحدها.</div></div>
     <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button></div>`;
   return `${v.rej ? `<div class="err" style="margin-top:8px">${esc(v.rej.byName || 'مديرك')} رفض طلب الإنهاء — ارجع المكتب أو ابعت طلب تاني</div>` : ''}
-    <div class="muted" style="font-size:12px;margin-top:6px">المعاينة بتتقفل لوحدها أول ما ترجع المكتب وتفتح الأبليكيشن. لو مش راجع المكتب، دوس "خلصت المعاينة" وابعت طلب لمديرك.</div>
+    <div class="muted" style="font-size:12px;margin-top:6px">أول ما تخلص دوس "خلصت المعاينة" واكتب حصل إيه — وبعدها تقدر تبدأ المعاينة اللي بعدها على طول، حتى لو مش راجع المكتب. نقط المعاينة بتنزل بعد موافقة مديرك.</div>
     <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhats('${l.id}')">ابعت لمديرك واتساب</button>
       <button class="btn danger" id="vwEndBtn" onclick="App.vwEnd('${l.id}')">خلصت المعاينة</button></div>`;
 }
-async function vwFinish(l, pos, how){
+// العلامات اللي بتظهر للمدير وهو بيوافق على نقط المعاينة
+function vwFlags(v, pos, mins){
+  const f = [];
+  if(mins < 10) f.push(`المعاينة كانت ${mins} دقيقة بس`);
+  const u = v.unitId ? unitById(v.unitId) : null;
+  const pts = [v.sLat ? {lat:v.sLat, lng:v.sLng} : null, v.lat ? {lat:v.lat, lng:v.lng} : null, pos && pos.lat ? pos : null].filter(Boolean);
+  if(!pts.length) f.push('مفيش لوكيشن خالص للسيلز في المعاينة دي');
+  if(!u) f.push('الوحدة مش متسجلة في الوحدات عندنا' + (v.unit ? ` (كتب: ${v.unit})` : ''));
+  else if(u.loc && u.loc.lat && pts.length){
+    const d = Math.min(v.minD != null ? v.minD : Infinity, ...pts.map(p => distM(p, u.loc)));
+    if(d > 500) f.push(`أقرب مكان كان فيه على بعد ${distTxt(d)} من لوكيشن الوحدة`);
+  }
+  return f;
+}
+async function vwFinish(l, pos, how, note, noHist){
   if(VW && VW.leadId === l.id) VW.ending = true;
-  const now = Date.now(), v = {...l.viewing, active:false, end:now, endBy:how, endReq:null, ...(pos && pos.lat ? {endLat:pos.lat, endLng:pos.lng} : {})};
+  const now = Date.now(), v = {...l.viewing, active:false, end:now, endBy:how, endReq:null, endNote:note || '', ...(pos && pos.lat ? {endLat:pos.lat, endLng:pos.lng} : {})};
   const mins = Math.max(1, Math.round((now - v.start) / 60000));
-  await store.updateLeads([l.id], {viewing:v}); l.viewing = v;
+  const hist = noHist ? null : {at:now, by:S.me.uid, byName:S.me.name, status:'viewed', note:`🚶 خلّص المعاينة (${mins} دقيقة)${v.unit ? ' — ' + v.unit : ''}${note ? '\n' + note : how === 'office' ? ' — رجع المكتب' : ''}`, nextFollowUp:null};
+  await store.updateLeads([l.id], {viewing:v, ...(noHist ? {} : {status:'viewed', lastContactAt:now})}, hist); l.viewing = v;
   if(v.by === S.me.uid) vwStop();
+  // النقط مبقتش بتنزل وقت ما يبدأ — بتروح للمدير يوافق عليها (المعاينات القديمة خدت نقطها وقت البداية)
+  if(v.np && v.by === S.me.uid){
+    const lp = pos && pos.lat ? pos : v.lat ? {lat:v.lat, lng:v.lng} : null;
+    await addPending('v', {leadId:l.id, leadName:l.name || '', unit:v.unit || '', unitId:v.unitId || null, start:v.start, mins, note:note || '', flags:vwFlags(v, pos, mins), ...(lp ? {lat:lp.lat, lng:lp.lng} : {})}).catch(() => {});
+  }
   await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:l.id, leadName:l.name || '', note:`${S.me.name} خلّص معاينة مع ${l.name || 'عميل'} (${mins} دقيقة)${v.unit ? ' — ' + v.unit : ''}${how === 'office' ? ' — رجع المكتب ✓' : ''}`, teamId:l.teamId || myTeam()}).catch(() => {});
 }
 // بيتنادى مع كل تحديث للمكان: لو السيلز خرج من المكتب ورجع تاني، المعاينة تتقفل لوحدها
@@ -2371,6 +2405,8 @@ async function vwSend(force){
   VW.sent = now;
   // بنحدّث المكان بس (مش المعاينة كلها) عشان مانرجعش معاينة المدير قفلها
   const up = {'viewing.at':now}; if(VW.pos) Object.entries(VW.pos).forEach(([k, val]) => up['viewing.' + k] = val);
+  const vu = l.viewing.unitId ? unitById(l.viewing.unitId) : null;
+  if(VW.pos && vu && vu.loc && vu.loc.lat){ const d = distM(VW.pos, vu.loc); if(l.viewing.minD == null || d < l.viewing.minD){ up['viewing.minD'] = d; l.viewing.minD = d; } }
   try{ await store.updateLeads([l.id], up); }catch(e){}
 }
 function vwTrack(leadId){
@@ -2577,9 +2613,14 @@ function adminHomeBase(){
       <div style="flex:1;text-align:right"><b>🔥 الليدز</b><div style="font-size:12.5px;opacity:.9">${live.filter(isLeadK).length} ليد · ${live.filter(isData).length} داتا</div></div>
       <div class="lh-n"><b>${lFresh}</b><span>لسه محدش كلّمهم</span></div><div class="lh-n"><b>${lToday}</b><span>وصلوا النهارده</span></div><div class="lh-n"><b>${lHot}</b><span>مهتمين</span></div>
     </button>
+    ${closeReviewCard()}
+    ${pendCard()}
+    ${pxCard()}
+    ${isLeader() ? commentsCard() : ''}
     ${starCard()}
     ${hotStrip()}
     ${requestsStrip()}
+    ${reviveCard()}
     ${pend ? `<button class="alert" style="margin-top:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.unitsPending()"><b>${pend}</b><div>⏳ وحدة متكررة مستنية موافقتك — دوس وشوفها</div></button>` : ''}
     ${nudgesCard()}
     <div class="kpis" style="margin-top:12px">
@@ -2612,7 +2653,7 @@ function adminHomeBase(){
 }
 
 /* ---------------- قائمة العملاء ---------------- */
-const SPECIALS = {late24:'محدش كلّمهم خلال 24 ساعة', agreed:'اتفقوا على العمولة', notcalled:'لسه ماتكلموش', overdue:'متابعات متأخرة', today:'اتكلموا النهارده', stale:'متأخرين في التواصل', unassigned:'مش متوزعين', due:'متابعات النهارده'};
+const SPECIALS = {late24:'محدش كلّمهم خلال 24 ساعة', agreed:'اتفقوا على العمولة', notcalled:'لسه ماتكلموش', overdue:'متابعات متأخرة', today:'اتكلموا النهارده', stale:'متأخرين في التواصل', unassigned:'مش متوزعين', due:'متابعات النهارده', revive:'♻️ عملاء قدام نجرّبهم تاني'};
 // التيم ليدر: قايمته فيها عملاءه هو بس، وعملاء فريقه من "كل عملاء الفريق" أو اسم السيلز (أو من الاختصارات زي "محدش كلّمهم")
 const leaderScope = l => !isLeader() || S.f.sales === '_team' || (S.f.sales !== 'all' ? true : (S.f.special ? true : l.assignedTo === S.me.uid));
 function filteredLeads(){
@@ -2625,7 +2666,10 @@ function filteredLeads(){
     if(kind === 'lead' && !isLeadK(l)) return false;
     if(kind === 'data' && !isData(l)) return false;
     if(S.f.ct && l.clientType !== S.f.ct) return false;
-    if(status !== 'all' && l.status !== status) return false;
+    if(status === '_arch' ? !isArch(l) : status !== 'all' && l.status !== status) return false;
+    // الأرشيف (مش مهتم / رقم غلط) مش بيظهر في الكل — بيظهر من زرار الأرشيف أو لو دوّرت عليه بالاسم/الرقم
+    if(status === 'all' && !special && !qq && isArch(l)) return false;
+    if(special === 'revive' && !(isRevive(l) && (l.assignedTo === S.me.uid || isAdmin()))) return false;
     if(isAdmin() && sales !== 'all' && sales !== '_team' && l.assignedTo !== sales) return false;
     if(special === 'notcalled' && !(l.assignedTo && l.status === 'new')) return false;
     if(special === 'overdue' && !isOverdue(l)) return false;
@@ -2678,6 +2722,14 @@ function leadItem(l){
     ${isLeadK(l) && (isAdmin() || isLeader()) ? leadWho(l) : ''}
   </button>`;
 }
+function reviveCard(){
+  const n = S.leads.filter(l => isRevive(l) && !l.movedToUnit && (isAdmin() ? leaderScope(l) || isBoss() : l.assignedTo === S.me.uid)).length;
+  return n ? `<button class="alert" style="margin-top:10px;background:#F0FDFA;border-color:#99F6E4;color:#134E4A" onclick="App.quick('revive')"><b>${n}</b><div>♻️ عملاء قدام في الأرشيف من أكتر من 3 شهور — جرّب تكلّمهم تاني، ممكن يكونوا محتاجين دلوقتي</div></button>` : '';
+}
+function closeReviewCard(){
+  const n = oldClosings().length;
+  return n ? `<button class="alert" style="margin-top:10px;background:#FEF2F2;border-color:#FECACA;color:#7F1D1D" onclick="App.closeReview()"><b>${n}</b><div>🧾 قفلات قديمة محتاجة مراجعتك — فيه منها "الوحدة اتباعت/اتأجرت" اتسجلت قفلة بالغلط وخدت 20 نقطة</div></button>` : '';
+}
 function leadsView(){
   const kind = S.f.kind || 'lead';
   if(kind === 'data' && S.upload && isAdmin()) return `<button class="btn ghost mini" style="margin-bottom:8px" onclick="App.cancelUpload()">→ رجوع للداتا</button>` + uploadView();
@@ -2708,7 +2760,8 @@ function leadsView(){
     </select>` : ''}
     ${kind !== 'data' ? `<select class="sel" onchange="App.src(this.value)"><option value="all">كل المصادر</option>${opts(Object.fromEntries(Object.entries(SOURCES).filter(([k]) => kind === 'all' || k !== 'sheet')), S.f.src)}<option value="_" ${S.f.src === '_' ? 'selected' : ''}>مش متحدد</option></select>` : ''}
     <div class="chips">${ctChip('', 'كل الأنواع')}${Object.entries(CT_SHORT).map(([k, v]) => ctChip(k, v)).join('')}</div>
-    <div class="chips" style="padding-top:2px">${chip('all', 'الكل', pool.length)}${Object.entries(STATUSES).map(([k, v]) => chip(k, v.label, counts[k] || 0)).join('')}</div>
+    <div class="chips" style="padding-top:2px">${chip('all', 'الكل', pool.filter(l => !isArch(l)).length)}${Object.entries(STATUSES).filter(([k]) => !ARCHIVED.has(k)).map(([k, v]) => chip(k, v.label, counts[k] || 0)).join('')}${chip('_arch', '📦 الأرشيف', pool.filter(isArch).length)}</div>
+    ${S.f.status === '_arch' ? '<div class="muted" style="font-size:12.5px;margin:2px 2px 6px">📦 هنا العملاء اللي "مش مهتمين" أو "رقم غلط". مش بيظهروا في القايمة عشان ميزحموهاش، وبعد 3 شهور بيرجعوا في "عملاء قدام نجرّبهم تاني".</div>' : ''}
     ${S.f.special ? `<div class="chips"><button class="chip on" onclick="App.quick('', true)">${S.f.special === 'late24' ? 'محدش كلّمهم خلال ' + hoursTxt(cfg('firstContactHours')) : SPECIALS[S.f.special]} ✕</button></div>` : ''}
     ${['unassigned', 'late24', 'stale'].includes(S.f.special) && isAdmin() && filteredLeads().length ? distributeUnassignedView() : ''}
     <div id="list">${listHTML()}</div>`;
@@ -2750,11 +2803,15 @@ function todayView(){
       <div class="kpi ok"><b>${calls}</b><span>مكالمات النهارده</span></div>
     </div>
     ${myReportCard()}
+    ${pxCard()}
+    ${commentsCard()}
+    ${pendCard()}
     ${(() => { const nl = L.filter(myNudge).sort((a, b) => b.nudge.at - a.nudge.at); return nl.length ? `<h3 style="color:var(--late)">⚠️ تنبيهات من مديرك (${nl.length})</h3>` + nl.map(leadItem).join('') : ''; })()}
     ${(() => { const pn = canApprove() ? S.units.filter(u => u.pendingDup).length : 0; return pn ? `<button class="alert" style="margin-top:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.unitsPending()"><b>${pn}</b><div>⏳ وحدة متكررة مستنية موافقتك — دوس وشوفها</div></button>` : ''; })()}
     ${starCard()}
     ${hotStrip()}
     ${requestsStrip()}
+    ${reviveCard()}
     ${freshLeads.length ? `<div class="leadhero" style="margin-top:14px"><div style="flex:1"><b>🔥 ليدز جديدة — كلّمهم الأول (${freshLeads.length})</b><div style="font-size:12.5px;opacity:.9">دول اتصلوا على إعلان، كل دقيقة بتفرق</div></div></div>` + freshLeads.slice(0, 30).map(leadItem).join('') : ''}
     ${late.length ? `<h3 style="color:var(--late)">⚠️ عدّى عليهم ${hoursTxt(cfg('firstContactHours'))} من غير تواصل (${late.length})</h3><div class="muted" style="font-size:12.5px">كلّمهم دلوقتي، لإن المدير ممكن يحوّلهم لحد تاني</div>` + late.map(leadItem).join('') : ''}
     ${soonU.length ? `<h3>🏠 وحدات هتفضى قريب — كلّم المالك (${soonU.length})</h3>` + soonU.map(unitItem).join('') : ''}
@@ -2810,6 +2867,11 @@ function leadSheet(l){
   ${contactBtns(l.phone)}
   ${nudgeBlock(l)}
   ${viewingLeadBlock(l)}
+  ${l.assignedTo === S.me.uid && !isClosedSt(l.status) && !pxForLead(l.id).some(x => ['sent', 'active'].includes(x.st)) ? `<button class="btn ghost block" style="margin-top:8px;border-color:#67E8F9;color:#0E7490" onclick="App.pxSheet('${l.id}')">👥 ابعت زميل يعمل المعاينة مكاني</button>` : ''}
+  ${pxLeadBlock(l)}
+  ${isClosedSt(l.status) ? `<div class="card" style="margin-top:10px;background:#ECFDF5;border-color:#6EE7B7"><b>🏆 ${STATUSES[l.status].label}</b>${l.closeRev === 'pend' ? ' <span class="muted" style="font-size:12.5px">· النقط مستنية موافقة المدير</span>' : ''}</div>`
+    : (l.assignedTo === S.me.uid || isAdmin()) ? `<button class="btn block" style="margin-top:8px;background:#0F766E" onclick="App.closeSheet2('${l.id}')">🏆 تسجيل قفلة (بعنا أو أجّرنا للعميل ده)</button>` : ''}
+  ${isArch(l) ? `<div class="card" style="margin-top:10px;background:#F8FAFC"><b>📦 العميل ده في الأرشيف</b><div class="muted" style="font-size:12.5px">مش ظاهر في القايمة الرئيسية. لو كلّمته وسجّلت أي نتيجة تانية هيرجع على طول.</div></div>` : ''}
   <div class="card details" style="margin-top:12px">
     <div><span>المشروع</span>${esc(l.project || '—')}</div>
     <div><span>رقم الوحدة</span>${esc(l.unit || '—')}</div>
@@ -2844,6 +2906,7 @@ function leadSheet(l){
       <div><label class="f" style="margin-top:0" id="dValLbl">${dealValLabel(l.dealType)}</label><input class="in" id="dVal" inputmode="numeric" dir="ltr" value="${esc(l.dealValue ? Number(digitsOnly(l.dealValue)).toLocaleString('en-US') : '')}" oninput="App.dealCalc()"></div>
     </div>
     <div id="dCalc" style="margin-top:10px;font-size:14px">${commText(l)}</div>
+    ${helpersOf(l).length ? `<div class="card" style="margin-top:8px;background:#ECFEFF;border-color:#A5F3FC;font-size:13px">🤝 <b>ساعد في المعاينة: ${esc(helpersOf(l).join('، '))}</b><div class="muted" style="font-size:12px">لو العميل اتقفل، اتفقوا على نسبته من العمولة</div></div>` : ''}
     <label class="chk"><input type="checkbox" id="dAgreed" ${l.commissionAgreed ? 'checked' : ''}> العميل اتفق على العمولة</label>
     <button class="btn ghost block" onclick="App.saveDeal()">حفظ العمولة</button>
   </div>
@@ -2868,6 +2931,10 @@ function leadSheet(l){
       </div>
       <input class="in" type="datetime-local" id="fuIn" value="${fuDefault}">
     </div>
+    <div id="unavBox" class="hidden"><label class="f">الوحدة حصلها إيه؟</label>
+      <div class="row"><label class="chk" style="margin:0"><input type="radio" name="unav" value="sold" checked> اتباعت</label><label class="chk" style="margin:0"><input type="radio" name="unav" value="rented"> اتأجرت</label></div>
+      <div class="muted" style="font-size:12px;margin-top:4px">ملهاش نقط. لو الوحدة متسجلة عندنا في الوحدات، حالتها هتتغير لوحدها عشان محدش يعرضها تاني.</div></div>
+    <div id="viewedBox" class="hidden muted" style="font-size:12.5px;margin-top:8px">💡 المرة الجاية دوس "🚶 طالع معاينة" قبل ما تتحرك — المعاينة بتتسجل بالمكان والوقت ونقطها بتنزل أسرع. المعاينة المتسجلة من هنا هتروح لمديرك يوافق عليها.</div>
     <button class="btn block" style="margin-top:14px" id="saveBtn" onclick="App.save()">حفظ</button>
   </div>
 
@@ -3083,7 +3150,22 @@ function activityView(){
     <div class="card" style="padding:2px 14px">${list.length ? list.map(a => line(a).replace('<div class="act">', `<div class="act" style="cursor:pointer" onclick="if(!event.target.closest('a,button')) App.person('${esc(a.by || '')}')">`)).join('') : `<div class="empty">مفيش نشاط لسه</div>`}</div>`;
 }
 /* ---------------- صفحة نشاط شخص (كل اللي عمله في فترة) ---------------- */
-const PER_RANGES = {today:'النهارده', week:'آخر 7 أيام', month:'آخر 30 يوم', all:'الكل'};
+const PER_RANGES = {today:'النهارده', week:'آخر 7 أيام', mtd:'الشهر ده', pm:'الشهر اللي فات', all:'الكل'};
+// بداية ونهاية كل فترة + أيام النقط اللي جواها
+function perRange(r){
+  const now = new Date(), m0 = new Date(now.getFullYear(), now.getMonth(), 1).getTime(), pm0 = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+  const t0 = r === 'today' ? startOfDay() : r === 'week' ? startOfDay() - 6 * DAY : r === 'mtd' ? m0 : r === 'pm' ? pm0 : r === 'month' ? Date.now() - 30 * DAY : 0;
+  const t1 = r === 'pm' ? m0 : Infinity;
+  const days = Object.keys(S.scores || {}).filter(d => { const t = new Date(d + 'T12:00').getTime(); return t >= t0 && t < t1; });
+  return {t0, t1, days};
+}
+function ptsBreakdown(uid, days){
+  const ids = uidsOf(uid), t = {k:0, v:0, u:0, r:0, c:0, l:0};
+  days.forEach(d => ids.forEach(id => { const o = ((S.scores || {})[d] || {})[id]; if(o) Object.keys(PTS).forEach(k => t[k] += +o[k] || 0); }));
+  const rows = Object.keys(PTS).filter(k => t[k]).map(k => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed var(--line,#E5E7EB)"><span>${t[k]} ${t[k] > 1 ? PTS_PLURAL[k] : PTS_LABEL[k]} × ${PTS[k]}</span><b>${t[k] * PTS[k]}</b></div>`).join('');
+  return `<div class="card" style="margin-top:10px;border:2px solid #FCD34D;background:#FFFBEB"><div style="display:flex;justify-content:space-between;align-items:center"><b>⭐ النقط جت منين</b><b style="font-size:20px;color:#92400E">${ptsOf(t)} نقطة</b></div>
+    ${rows || '<div class="muted" style="font-size:13px;margin-top:6px">مفيش نقط في الفترة دي</div>'}</div>`;
+}
 function personItems(uid){
   const ids = uidsOf(uid), mine = x => ids.includes(x), out = [], seen = new Set();
   // المكالمات والملاحظات من سجل كل عميل (كامل، مش آخر 300 بس)
@@ -3104,8 +3186,10 @@ function personItems(uid){
   return out.sort((a, b) => b.at - a.at);
 }
 function personSheet(uid){
-  const r = S._pRange || 'week', t0 = r === 'today' ? startOfDay() : r === 'week' ? Date.now() - 7 * DAY : r === 'month' ? Date.now() - 30 * DAY : 0;
-  const all = personItems(uid), list = all.filter(x => x.at >= t0), nm = staffInfo(uid).name || userName(uid);
+  const r = S._pRange || 'week', R = perRange(r), t0 = R.t0;
+  const all = personItems(uid), list = all.filter(x => x.at >= t0 && x.at < R.t1), nm = staffInfo(uid).name || userName(uid);
+  S._cmtRefs = [];
+  const cmtBtn = (txt) => (isAdmin() && uid !== S.me.uid) ? `<button type="button" class="btn ghost mini" style="margin-top:4px;padding:2px 8px" onclick="App.cmtSheet('${esc(uid)}', ${S._cmtRefs.push(txt) - 1})">💬 علّق</button>` : '';
   const c = {call:0, viewing:0, unit:0, closed:0, report:0};
   list.forEach(x => { if(x.k === 'call'){ c.call++; if(isClosedSt(x.h.status)) c.closed++; } else if(x.k === 'viewing' && /طلع معاينة/.test(x.a.note || '')) c.viewing++;
     else if(x.k === 'unit' || (x.k === 'upload' && /وحدة/.test(x.a.note || '') && !/موافقة|وافق|رفض/.test(x.a.note || ''))) c.unit++; else if(x.k === 'report') c.report++; });
@@ -3114,14 +3198,21 @@ function personSheet(uid){
     if(x.k === 'call'){ const s = STATUSES[x.h.status] || {label:x.h.status || 'ملاحظة', color:'#64748B'};
       return `<div class="act"><div class="ic" style="color:${s.color}">${ICON.phone.replace('<svg', '<svg width="18" height="18"')}</div><div class="tx">
         كلّم ${lnk(x.lead.id, x.lead.name)} — <span style="color:${s.color};font-weight:700">${s.label}</span>
-        ${x.h.note ? `<div class="note">${esc(x.h.note)}</div>` : ''}${voiceBtn(x.h.voice)}<div class="t">${fmt(x.at)} · ${ago(x.at)}</div></div></div>`; }
+        ${x.h.note ? `<div class="note">${esc(x.h.note)}</div>` : ''}${voiceBtn(x.h.voice)}<div class="t">${fmt(x.at)} · ${ago(x.at)}</div>${cmtBtn(`${s.label} — ${x.lead.name || 'عميل'} (${fmt(x.at)})`)}</div></div>`; }
     if(x.k === 'unit') return `<div class="act"><div class="ic">🏠</div><div class="tx">سجّل وحدة: <a href="javascript:void 0" onclick="App.openUnit('${x.u.id}')" style="color:var(--navy);font-weight:700">${esc([x.u.type, x.u.project, x.u.unitNo].filter(Boolean).join(' · ') || 'وحدة')}</a><div class="t">${fmt(x.at)} · ${ago(x.at)}</div></div></div>`;
     const a = x.a, ic = x.k === 'viewing' ? '🚶' : x.k === 'report' ? '📝' : x.k === 'assign' ? '⇄' : x.k === 'call' ? '📞' : '•';
-    return `<div class="act"><div class="ic">${ic}</div><div class="tx">${a.leadId && leadById(a.leadId) ? lnk(a.leadId, a.leadName) + ' · ' : ''}<span style="white-space:pre-wrap">${esc(a.note || '')}</span>${a.lat ? ` · <a href="${mapsUrl(a)}" target="_blank" rel="noopener" style="color:var(--navy)">المكان</a>` : ''}<div class="t">${fmt(a.at)} · ${ago(a.at)}</div></div></div>`;
+    return `<div class="act"><div class="ic">${ic}</div><div class="tx">${a.leadId && leadById(a.leadId) ? lnk(a.leadId, a.leadName) + ' · ' : ''}<span style="white-space:pre-wrap">${esc(a.note || '')}</span>${a.lat ? ` · <a href="${mapsUrl(a)}" target="_blank" rel="noopener" style="color:var(--navy)">المكان</a>` : ''}<div class="t">${fmt(a.at)} · ${ago(a.at)}</div>${cmtBtn(`${(a.note || '').slice(0, 80)} (${fmt(a.at)})`)}</div></div>`;
   };
+  const myPend = pendAll().filter(p => uidsOf(uid).includes(p.by) && p.at >= t0 && p.at < R.t1).sort((a, b) => b.at - a.at);
+  const comms = commFor(uid).filter(c => c.at >= t0 && c.at < R.t1);
   const kpi = (n, t) => `<div class="kpi"><b>${n}</b><span>${t}</span></div>`;
   return `<div class="sheet-h"><div style="display:flex;align-items:center;gap:10px">${avatarHtml(uid, 40)}<div><h2 style="margin:0">${esc(nm)}</h2><span class="muted" style="font-size:12.5px">كل نشاطه · ${PER_RANGES[r]}</span></div></div><button class="x" onclick="App.close()">×</button></div>
     <div class="chips" style="margin-top:8px">${Object.entries(PER_RANGES).map(([k, v]) => `<button class="chip ${r === k ? 'on' : ''}" onclick="App.personRange('${esc(uid)}', '${k}')">${v}</button>`).join('')}</div>
+    ${ptsBreakdown(uid, R.days)}
+    ${myPend.length ? `<h3>🚶🏆 معاينات وقفلات (${myPend.length})</h3>` + myPend.map(p => pendRow(p)).join('') : ''}
+    ${isAdmin() && uid !== S.me.uid && staffInfo(uid).role !== 'admin' ? `<div class="row" style="margin-top:10px"><button class="btn ghost" onclick="App.cmtSheet('${esc(uid)}', -1)">💬 اكتبله ملاحظة</button><button class="btn ghost" onclick="App.addVwPts('${esc(uid)}')">➕ نقط معاينة اتسجلت غلط</button></div>` : ''}
+    ${comms.length ? `<h3>💬 الملاحظات (${comms.length})</h3>` + comms.map(cm => `<div class="card" style="margin-top:6px;font-size:13.5px"><b>${esc(cm.byName || '')}</b> <span class="muted" style="font-size:12px">${ago(cm.at)}${cm.seen ? ' · شافها ✓' : ''}</span>${cm.ref ? `<div class="muted" style="font-size:12px">على: ${esc(cm.ref)}</div>` : ''}<div style="white-space:pre-wrap;margin-top:4px">${esc(cm.text)}</div></div>`).join('') : ''}
+    <h3>كل اللي عمله</h3>
     <div class="kpis" style="margin-top:6px">${kpi(c.call, 'مكالمات')}${kpi(c.viewing, 'معاينات')}${kpi(c.unit, 'وحدات سجّلها')}${kpi(c.closed, 'قفلات')}</div>
     ${S._pLoading ? '<div class="muted" style="font-size:12.5px;margin-top:8px">بيحمّل النشاط القديم...</div>' : ''}
     <div class="card" style="padding:2px 14px;margin-top:10px">${list.length ? list.slice(0, 400).map(row).join('') : `<div class="empty">مفيش نشاط في الفترة دي</div>`}</div>
@@ -3139,6 +3230,137 @@ function scoreBump(key, n = 1){
   const day = dayKey();
   store.bump(SCORE_DOC + day.slice(0, 7), day, S.me.uid, key, n, S.me.name).catch(() => {});
 }
+// نقط لحد تاني (المدير بيوافق، أو بيصلّح بأثر رجعي) — على يوم الأكشن نفسه
+function scoreBumpFor(uid, name, key, n, at){
+  const day = dayKey(at || Date.now());
+  return store.bump(SCORE_DOC + day.slice(0, 7), day, uid, key, n, name || '');
+}
+
+/* ---------------- نقط مستنية موافقة المدير (المعاينة والقفلة) ---------------- */
+const PEND_DOC = 'meta_pending';
+const pendId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+async function addPending(kind, data){
+  if(!S.me || isOwner()) return;   // الأدمن مش داخل في الترتيب
+  const by = data.by || S.me.uid;
+  const p = {kind, st:'pending', at:Date.now(), by, byName:data.byName || S.me.name, teamId:teamOf(by) || null, flags:[], ...data};
+  await store.setMeta(PEND_DOC, {items:{[pendId()]:p}});
+}
+const canReviewPts = p => !!S.me && p.by !== S.me.uid && (isBoss() || (isLeader() && (p.teamId === S.me.uid || teamOf(p.by) === S.me.uid)));
+const pendAll = () => Object.entries(S.pend || {}).filter(([, p]) => p && p.kind).map(([id, p]) => ({...p, id}));
+const pendForMe = () => pendAll().filter(p => p.st === 'pending' && canReviewPts(p)).sort((a, b) => b.at - a.at);
+function pendRow(p, withBtns = true){
+  const what = p.kind === 'k' ? `🏆 قفلة ${p.deal === 'sale' ? 'بيع' : 'إيجار'}` : '🚶 معاينة';
+  const lead = p.leadId && leadById(p.leadId);
+  const stTxt = p.st === 'ok' ? `<span style="color:#15803D;font-weight:800">✓ اتوافق عليها${p.revByName ? ' — ' + esc(p.revByName) : ''}</span>`
+    : p.st === 'no' ? `<span style="color:#B91C1C;font-weight:800">✕ اترفضت${p.revByName ? ' — ' + esc(p.revByName) : ''}</span>` : '<span style="color:#B45309;font-weight:800">⏳ مستنية موافقة</span>';
+  return `<div class="card" style="margin-top:8px;${p.flags && p.flags.length && p.st === 'pending' ? 'border-color:#FCA5A5;background:#FFF7F7' : ''}">
+    <div style="display:flex;align-items:center;gap:8px">${avatarHtml(p.by, 34)}<div style="flex:1;min-width:0"><b>${esc(p.byName || userName(p.by))}</b> · ${what} <b style="color:var(--navy)">+${PTS[p.kind]}</b>
+      <div class="muted" style="font-size:12px">${lead ? `<a href="javascript:void 0" onclick="App.open('${p.leadId}')" style="color:var(--navy);font-weight:700">${esc(p.leadName || lead.name || 'عميل')}</a>` : esc(p.leadName || '')}${p.unit ? ' · ' + esc(p.unit) : ''} · ${fmt(p.at)}${p.mins ? ` · ${p.mins} دقيقة` : ''}</div></div></div>
+    ${p.proxyName ? `<div style="font-size:12.5px;margin-top:4px;color:#0E7490;font-weight:700">👥 المعاينة عملها ${esc(p.proxyName)} بالنيابة عن ${esc(p.byName || '')} — النقط لـ ${esc(p.byName || '')}</div>` : ''}
+    ${p.helpers && p.helpers.length ? `<div style="font-size:12.5px;margin-top:4px;color:#0E7490;font-weight:700">🤝 ساعد في المعاينة: ${esc(p.helpers.join('، '))}</div>` : ''}
+    ${p.deal && p.value ? `<div style="font-size:13px;margin-top:4px">${esc(DEALS[p.deal] || '')} · ${money(+digitsOnly(p.value))}</div>` : ''}
+    ${p.note ? `<div class="note" style="margin-top:6px;white-space:pre-wrap">"${esc(p.note)}"</div>` : ''}
+    ${p.flags && p.flags.length ? `<div style="margin-top:6px;font-size:12.5px;color:#B91C1C;font-weight:700">${p.flags.map(f => '⚠️ ' + esc(f)).join('<br>')}</div>` : (p.kind === 'v' ? '<div style="margin-top:6px;font-size:12.5px;color:#15803D">✓ المكان والمدة مظبوطين</div>' : '')}
+    ${p.lat ? `<a class="btn ghost mini" style="margin-top:6px" href="${mapsUrl(p)}" target="_blank" rel="noopener">مكانه في المعاينة</a>` : ''}
+    <div style="margin-top:6px;font-size:12.5px">${stTxt}</div>
+    ${withBtns && p.st === 'pending' && canReviewPts(p) ? `<div class="row" style="margin-top:8px"><button class="btn green" onclick="App.pendOk('${p.id}')">✓ وافق (+${PTS[p.kind]})</button><button class="btn danger" onclick="App.pendNo('${p.id}')">✕ ارفض</button></div>` : ''}</div>`;
+}
+function pendCard(){
+  const n = pendForMe().length; if(!n) return '';
+  return `<button class="alert" style="margin-top:10px;background:#FEFCE8;border-color:#FDE047;color:#713F12" onclick="App.pendSheet()"><b>${n}</b><div>⭐ معاينة / قفلة مستنية موافقتك عشان النقط تنزل — دوس وراجعها</div></button>`;
+}
+// السيلز: نقطه اللي لسه مستنية
+function myPendNote(){
+  const mine = pendAll().filter(p => p.by === S.me.uid && p.st === 'pending');
+  return mine.length ? `<div class="muted" style="font-size:12.5px;margin-top:6px;text-align:center">⏳ عندك ${mine.length} ${mine.length > 1 ? 'حاجات' : 'حاجة'} (${mine.reduce((a, p) => a + PTS[p.kind], 0)} نقطة) مستنية موافقة مديرك</div>` : '';
+}
+
+/* ---------------- ملاحظات المدير على السيلز ---------------- */
+const COMM_DOC = 'meta_comments';
+const commFor = uid => Object.entries(S.comm || {}).filter(([, c]) => c && c.to && uidsOf(uid).includes(c.to)).map(([id, c]) => ({...c, id})).sort((a, b) => b.at - a.at);
+function commentsCard(){
+  const list = commFor(S.me.uid).filter(c => !c.seen && Date.now() - c.at < 30 * DAY);
+  if(!list.length) return '';
+  return `<h3 style="color:var(--navy)">💬 ملاحظات من مديرك (${list.length})</h3>` + list.map(c => `<div class="card" style="margin-top:8px;border-color:#BFDBFE;background:#EFF6FF">
+    <div style="display:flex;align-items:center;gap:8px">${avatarHtml(c.by, 30)}<b style="flex:1">${esc(c.byName || '')}</b><span class="muted" style="font-size:12px">${ago(c.at)}</span></div>
+    ${c.ref ? `<div class="muted" style="font-size:12px;margin-top:6px">على: ${esc(c.ref)}</div>` : ''}
+    <div style="margin-top:6px;white-space:pre-wrap;font-size:14px">${esc(c.text)}</div>
+    <button class="btn ghost mini" style="margin-top:8px" onclick="App.cmtSeen('${c.id}')">تمام، شفتها ✓</button></div>`).join('');
+}
+
+/* ---------------- زميل يعمل المعاينة بالنيابة عن صاحب العميل ---------------- */
+// الطلب متخزن في ملف يشوفه الكل (الزميل مش شايف عملاء غيره)، والنقط بتروح لصاحب العميل بعد موافقة المدير
+const PROXY_DOC = 'meta_proxy';
+const pxAll = () => Object.entries(S.proxy || {}).filter(([, x]) => x && x.leadId).map(([id, x]) => ({...x, id}));
+const pxForLead = id => pxAll().filter(x => x.leadId === id).sort((a, b) => b.at - a.at);
+const pxMine = () => pxAll().filter(x => S.me && x.to === S.me.uid && ['sent', 'active'].includes(x.st)).sort((a, b) => a.at - b.at);
+const pxActive = () => pxAll().find(x => S.me && x.to === S.me.uid && x.st === 'active');
+const helpersOf = l => [...new Set([...(l.helpers || []).map(h => h.name), ...pxForLead(l.id).filter(x => x.st === 'done').map(x => x.toName)].filter(Boolean))];
+const pxColleagues = () => [...new Set([...Object.keys(S.staff || {}), ...Object.keys(S.users || {})])].map(uid => ({uid, ...staffInfo(uid), active:S.users[uid] ? S.users[uid].active !== false && !S.users[uid].replacedBy : (S.staff[uid] || {}).active}))
+  .filter(u => u.uid !== S.me.uid && u.name && u.active !== false && ['sales', 'leader', 'manager'].includes(u.role)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+// جوه صفحة العميل: سجل المعاينات اللي اتعملت بالنيابة
+function pxLeadBlock(l){
+  const list = pxForLead(l.id).filter(x => x.st !== 'cancel'); if(!list.length) return '';
+  return list.map(x => `<div class="card" style="margin-top:10px;border-color:#A5F3FC;background:#ECFEFF">
+    <div style="display:flex;align-items:center;gap:8px">${avatarHtml(x.to, 32)}<div style="flex:1;min-width:0"><b>👥 ${esc(x.toName)}</b> ${x.st === 'done' ? 'عمل' : x.st === 'active' ? 'في' : 'رايح'} معاينة بالنيابة عن <b>${esc(x.ownerName)}</b>
+      <div class="muted" style="font-size:12px">${x.unit ? esc(x.unit) + ' · ' : ''}${x.st === 'done' ? `${fmt(x.end)} · ${x.mins || 1} دقيقة` : x.st === 'active' ? 'بدأت ' + minsAgo(x.start) : 'لسه مابدأش · اتبعت ' + ago(x.at)}</div></div></div>
+    ${x.note ? `<div class="note" style="margin-top:6px;white-space:pre-wrap">"${esc(x.note)}"</div>` : ''}
+    ${x.lat ? `<a class="btn ghost mini" style="margin-top:6px" href="${mapsUrl(x)}" target="_blank" rel="noopener">${x.st === 'active' ? 'مكانه دلوقتي' : 'مكانه في المعاينة'}</a>` : ''}
+    ${x.st === 'sent' && (x.owner === S.me.uid || isAdmin()) ? `<button class="btn ghost mini" style="margin-top:6px" onclick="App.pxCancel('${x.id}')">إلغاء الطلب</button>` : ''}</div>`).join('');
+}
+// في الرئيسية بتاعة الزميل
+function pxCard(){
+  const list = pxMine(); if(!list.length) return '';
+  return `<h3 style="color:#0E7490">👥 معاينات بالنيابة عن زمايلك (${list.length})</h3>` + list.map(x => `<div class="card" style="margin-top:8px;border:2px solid ${x.st === 'active' ? '#16A34A' : '#67E8F9'};background:${x.st === 'active' ? '#F0FDF4' : '#ECFEFF'}">
+    <div style="display:flex;align-items:center;gap:8px">${avatarHtml(x.owner, 34)}<div style="flex:1;min-width:0"><b>${esc(x.ownerName)}</b> طالب تروح مكانه معاينة
+      <div style="font-size:14px;margin-top:2px">العميل: <b>${esc(x.leadName || '—')}</b>${x.unit ? ' · ' + esc(x.unit) : ''}</div>
+      ${x.when ? `<div class="muted" style="font-size:12.5px">الميعاد: ${fmt(x.when)}</div>` : ''}</div></div>
+    ${x.msg ? `<div class="note" style="margin-top:6px;white-space:pre-wrap">${esc(x.msg)}</div>` : ''}
+    ${x.phone ? contactBtns(x.phone) : ''}
+    ${x.st === 'active' ? `<div class="muted" style="font-size:12.5px;margin-top:6px">🚶 انت في المعاينة دي من ${minsAgo(x.start).replace('من ', '')} — خلّي الأبليكيشن مفتوح عشان مكانك يتبعت</div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhatsPx('${x.id}')">ابعت لمديرك واتساب</button><button class="btn danger" onclick="App.pxEnd('${x.id}')">خلصت المعاينة</button></div>`
+      : `<button class="btn block" style="margin-top:8px;background:#16A34A" onclick="App.pxStart('${x.id}')">🚶 ابدأ المعاينة</button>`}</div>`).join('');
+}
+let PX = null;   // تتبع مكان الزميل وهو في المعاينة
+function pxTrack(id){
+  if(PX && PX.id === id) return;
+  pxStopTrack();
+  PX = {id, pos:null, watch:null, timer:null, minD:null};
+  if(navigator.geolocation) PX.watch = navigator.geolocation.watchPosition(p => { if(PX) PX.pos = {lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6), acc:Math.round(p.coords.accuracy || 0)}; }, () => {}, {enableHighAccuracy:true, maximumAge:30000});
+  PX.timer = setInterval(pxSend, VW_EVERY);
+}
+function pxStopTrack(){ if(!PX) return; try{ navigator.geolocation.clearWatch(PX.watch); }catch(e){} clearInterval(PX.timer); PX = null; }
+async function pxSend(){
+  if(!PX || !PX.pos) return;
+  const x = (S.proxy || {})[PX.id]; if(!x || x.st !== 'active'){ pxStopTrack(); return; }
+  const u = x.unitId ? unitById(x.unitId) : null, up = {lat:PX.pos.lat, lng:PX.pos.lng, posAt:Date.now()};
+  if(u && u.loc && u.loc.lat){ const d = distM(PX.pos, u.loc); if(x.minD == null || d < x.minD) up.minD = d; }
+  try{ await store.setMeta(PROXY_DOC, {items:{[PX.id]:up}}); }catch(e){}
+}
+// صاحب العميل: أول ما الزميل يخلّص، المعاينة تتكتب في سجل العميل وصاحبها يتسجل كمساعد
+async function pxSync(){
+  if(!S.me || S._pxSyncing) return; S._pxSyncing = true;
+  try{
+    for(const x of pxAll().filter(x => x.st === 'done' && !x.logged && x.owner === S.me.uid)){
+      const l = leadById(x.leadId); if(!l) continue;
+      const helpers = [...(l.helpers || []).filter(h => h.uid !== x.to), {uid:x.to, name:x.toName}];
+      await store.updateLeads([l.id], {status:'viewed', lastContactAt:x.end || Date.now(), helpers},
+        {at:x.end || Date.now(), by:x.to, byName:x.toName, status:'viewed', note:`👥 معاينة عملها ${x.toName} بالنيابة عن ${x.ownerName} (${x.mins || 1} دقيقة)${x.unit ? ' — ' + x.unit : ''}${x.note ? '\n' + x.note : ''}`, nextFollowUp:null});
+      await store.setMeta(PROXY_DOC, {items:{[x.id]:{logged:true}}});
+    }
+  }catch(e){}
+  S._pxSyncing = false;
+}
+
+/* ---------------- مراجعة القفلات القديمة (الأدمن) ---------------- */
+// كل مرة العميل اتحوّل لقفلة في السجل القديم كانت بتاخد 20 نقطة — بنرجع نلاقيها عشان الأدمن يراجعها
+function closeHits(l){
+  const hs = (l.history || []).filter(h => h.at && STATUSES[h.status]).sort((a, b) => a.at - b.at);
+  let prev = 'new'; const out = [];
+  hs.forEach(h => { if(isClosedSt(h.status) && !isClosedSt(prev)) out.push(h); prev = h.status; });
+  return out;
+}
+const oldClosings = () => isOwner() ? S.leads.filter(l => !l.closeRev && closeHits(l).length).sort((a, b) => closeHits(b)[0].at - closeHits(a)[0].at) : [];
 const starName = uid => staffInfo(uid).name || (S._scoreNames || {})[uid] || userName(uid);
 function scoreRows(days){
   const tot = {};
@@ -3158,12 +3380,13 @@ function starCard(){
   const me = today.findIndex(r => r.uid === S.me.uid);
   return `<button class="star" onclick="App.starSheet('day')">
     <div class="star-lbl">⭐ نجم اليوم</div>
-    <div class="star-main">${avatarHtml(top.uid, 64)}<div style="flex:1;min-width:0"><b class="star-name">${esc(starName(top.uid))}${top.uid === S.me.uid ? ' (انت 👑)' : ''}</b>
+    <div class="star-main" onclick="event.stopPropagation();App.starPerson('${top.uid}','day')">${avatarHtml(top.uid, 64)}<div style="flex:1;min-width:0"><b class="star-name">${esc(starName(top.uid))}${top.uid === S.me.uid ? ' (انت 👑)' : ''}</b>
       <div class="star-pts">${top.p} <small>نقطة</small></div></div></div>
     <div class="star-chips">${starChips(top.t)}</div>
     ${today.length > 1 ? `<div class="star-rest">${today.slice(1, 3).map((r, i) => `<span>${i ? '🥉' : '🥈'} ${esc(starName(r.uid).split(' ')[0])} · ${r.p}</span>`).join('')}${me > 2 ? `<span>انت رقم ${me + 1} · ${today[me].p}</span>` : ''}</div>` : ''}
     <div class="star-foot"><span>${yl}</span><span>ترتيب اليوم والشهر ›</span></div>
-  </button>`;
+    ${(isAdmin() || top.uid === S.me.uid) ? '<div class="star-sub" style="text-align:center;margin-top:4px">دوس على الصورة تشوف عمل إيه وخد النقط دي ليه</div>' : ''}
+  </button>${myPendNote()}`;
 }
 function starSheetHTML(mode){
   const now = new Date(), ym = dayKey().slice(0, 7), pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -3175,12 +3398,13 @@ function starSheetHTML(mode){
   return `<div class="sheet-h"><h2>⭐ ترتيب السيلز</h2><button class="x" onclick="App.close()">×</button></div>
     <div class="row" style="gap:6px">${tab('day', 'النهارده')}${tab('month', 'شهر ' + MONTHS[now.getMonth()])}${tab('prev', 'شهر ' + MONTHS[pm.getMonth()])}</div>
     ${mode !== 'day' && rows[0] ? `<div class="card star-month"><span>${mode === 'prev' ? '🏆 بطل الشهر' : '🏆 متصدر الشهر لحد دلوقتي'}</span>${avatarHtml(rows[0].uid, 44)}<b>${esc(starName(rows[0].uid))}</b><b class="rp">${rows[0].p} نقطة</b></div>` : ''}
-    <div class="card" style="margin-top:10px;padding:4px 10px">${rows.length ? rows.map((r, i) => `<div class="rank${r.uid === S.me.uid ? ' me' : ''}"><span class="rk">${medal(i)}</span>${avatarHtml(r.uid, 38)}
+    <div class="card" style="margin-top:10px;padding:4px 10px">${rows.length ? rows.map((r, i) => `<div class="rank${r.uid === S.me.uid ? ' me' : ''}" style="cursor:pointer" onclick="App.starPerson('${r.uid}','${mode}')"><span class="rk">${medal(i)}</span>${avatarHtml(r.uid, 38)}
       <div style="flex:1;min-width:0"><b>${esc(starName(r.uid))}</b><div class="rc">${starChips(r.t)}</div></div><span class="rp">${r.p}</span></div>`).join('')
       : `<div class="empty">لسه مفيش نقط ${mode === 'day' ? 'النهارده' : 'في الشهر ده'}</div>`}</div>
     <h3>النقط بتتحسب إزاي؟</h3>
     <div class="card pts-legend">${Object.keys(PTS).map(k => `<div><span>${PTS_LABEL[k]}</span><b>+${PTS[k]}</b></div>`).join('')}
-      <div class="muted" style="font-size:12px;grid-column:1/-1">المكالمة على نفس العميل أكتر من مرة في 10 دقايق بتتحسب مرة واحدة. القفلة بتتحسب لما العميل يتقفل أول مرة.</div></div>`;
+      <div class="muted" style="font-size:12px;grid-column:1/-1">المكالمة على نفس العميل أكتر من مرة في 10 دقايق بتتحسب مرة واحدة. <b>المعاينة والقفلة نقطهم بتنزل بعد موافقة التيم ليدر أو السيلز مانجر.</b> "الوحدة مبقتش متاحة" ملهاش نقط.</div></div>
+    ${isAdmin() ? '<div class="muted" style="font-size:12.5px;text-align:center;margin-top:8px">دوس على أي اسم تشوف تفاصيل نقطه وتكتبله ملاحظة</div>' : ''}`;
 }
 function starWatch(){
   const top = scoreRows([dayKey()])[0], id = top ? top.uid : null;
@@ -3585,7 +3809,7 @@ const App = window.App = {
   more(){ S.limit += 100; render(); },
   actFilter(v){ S.actFilter = v; render(); },
   async person(uid){
-    if(!uid || !isAdmin()) return;
+    if(!uid || !(isAdmin() || uid === S.me.uid)) return;
     S._pRange = S._pRange || 'week'; S._pActs = S._pActs || {}; S._pUid = uid;
     const need = !S._pActs[uid]; S._pLoading = need;
     openSheet(personSheet(uid));
@@ -3595,6 +3819,241 @@ const App = window.App = {
     if(S._pUid === uid && !$('#sheet').classList.contains('hidden')){ S._keepSheetScroll = true; openSheet(personSheet(uid)); }
   },
   personRange(uid, r){ S._pRange = r; openSheet(personSheet(uid)); },
+  // من نجم اليوم / الترتيب: تفاصيل نقط الشخص في نفس الفترة
+  starPerson(uid, mode){
+    if(!(isAdmin() || uid === S.me.uid)) return App.starSheet(mode || 'day');
+    S._pRange = mode === 'month' ? 'mtd' : mode === 'prev' ? 'pm' : 'today';
+    App.person(uid);
+  },
+  pendSheet(){
+    const list = pendForMe();
+    openSheet(`<div class="sheet-h"><h2>⭐ مستنية موافقتك (${list.length})</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted" style="font-size:13px">وافق بس على المعاينة أو القفلة اللي اتعملت فعلاً. العلامات الحمرا معناها إن فيه حاجة محتاجة تتأكد منها (المكان بعيد عن الوحدة، أو المدة قصيرة، أو الوحدة مش في المخزون).</p>
+      ${list.length ? list.map(p => pendRow(p)).join('') : '<div class="empty">مفيش حاجة مستنية 👌</div>'}`);
+  },
+  async pendOk(id){
+    const p = (S.pend || {})[id]; if(!p || p.st !== 'pending' || !canReviewPts(p)) return;
+    try{
+      await scoreBumpFor(p.by, p.byName, p.kind, 1, p.at);
+      await store.setMeta(PEND_DOC, {items:{[id]:{st:'ok', revBy:S.me.uid, revByName:S.me.name, revAt:Date.now()}}});
+      if(p.kind === 'k' && p.leadId) store.updateLeads([p.leadId], {closeRev:'ok'}).catch(() => {});
+      await store.addActivity({type:'viewing', at:Date.now(), by:S.me.uid, byName:S.me.name, leadId:p.leadId || null, leadName:p.leadName || '', note:`✓ ${S.me.name} وافق على ${p.kind === 'k' ? 'قفلة' : 'معاينة'} ${p.byName || ''} مع ${p.leadName || 'عميل'} (+${PTS[p.kind]} نقطة)`, teamId:p.teamId || null}).catch(() => {});
+      toast(`اتوافق ✓ +${PTS[p.kind]} نقطة لـ ${p.byName || ''}`); S._keepSheetScroll = true; App.refreshSheet();
+    }catch(e){ toast(fbError(e)); }
+  },
+  async pendNo(id){
+    const p = (S.pend || {})[id]; if(!p || p.st !== 'pending' || !canReviewPts(p)) return;
+    try{
+      await store.setMeta(PEND_DOC, {items:{[id]:{st:'no', revBy:S.me.uid, revByName:S.me.name, revAt:Date.now()}}});
+      await store.addActivity({type:'viewing', at:Date.now(), by:S.me.uid, byName:S.me.name, leadId:p.leadId || null, leadName:p.leadName || '', note:`✕ ${S.me.name} رفض نقط ${p.kind === 'k' ? 'قفلة' : 'معاينة'} ${p.byName || ''} مع ${p.leadName || 'عميل'}`, teamId:p.teamId || null}).catch(() => {});
+      toast('اترفضت'); S._keepSheetScroll = true; App.refreshSheet();
+    }catch(e){ toast(fbError(e)); }
+  },
+  // بعد موافقة/رفض: نفتح نفس الصفحة تاني بالبيانات الجديدة
+  refreshSheet(){
+    setTimeout(() => {
+      if($('#sheet').classList.contains('hidden')) return render();
+      S._keepSheetScroll = true;
+      if(S._pUid && $('#sheet').innerHTML.includes('كل نشاطه')) openSheet(personSheet(S._pUid)); else App.pendSheet();
+      render();
+    }, 400);
+  },
+  cmtSheet(uid, ri){
+    const ref = ri >= 0 ? (S._cmtRefs || [])[ri] || '' : '';
+    S._cmtRef = ref; S._cmtUid = uid;
+    openSheet(`<div class="sheet-h"><h2>💬 ملاحظة لـ ${esc(staffInfo(uid).name || userName(uid))}</h2><button class="x" onclick="App.close()">×</button></div>
+      ${ref ? `<div class="card muted" style="font-size:13px">على: ${esc(ref)}</div>` : ''}
+      <textarea class="in" id="cmtTx" style="min-height:110px;margin-top:10px" placeholder="مثلاً: شغل ممتاز النهارده 👏 — أو: العميل ده محتاج متابعة أسرع"></textarea>
+      <button class="btn block" style="margin-top:10px" id="cmtBtn" onclick="App.cmtSend()">ابعت الملاحظة</button>
+      <button class="btn ghost block" style="margin-top:8px" onclick="App.person('${esc(uid)}')">رجوع</button>`);
+    setTimeout(() => { const t = $('#cmtTx'); if(t) t.focus(); }, 200);
+  },
+  async cmtSend(){
+    const text = ($('#cmtTx') || {}).value ? $('#cmtTx').value.trim() : '', uid = S._cmtUid;
+    if(text.length < 2) return toast('اكتب الملاحظة الأول');
+    const b = $('#cmtBtn'); b.disabled = true; b.textContent = 'بيبعت...';
+    try{
+      await store.setMeta(COMM_DOC, {items:{[pendId()]:{to:uid, text, ref:S._cmtRef || '', by:S.me.uid, byName:S.me.name, at:Date.now(), seen:false}}});
+      toast('اتبعتت ✓ — هتظهرله في الرئيسية'); App.person(uid);
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'ابعت الملاحظة'; }
+  },
+  async cmtSeen(id){ try{ await store.setMeta(COMM_DOC, {items:{[id]:{seen:true, seenAt:Date.now()}}}); render(); }catch(e){ toast(fbError(e)); } },
+  // المدير يضيف نقط معاينة يدوي (مثلاً السيلز كتبها ملاحظة بدل ما يختار "تمت المعاينة")
+  addVwPts(uid){
+    if(!isAdmin() || uid === S.me.uid) return;
+    openSheet(`<div class="sheet-h"><h2>➕ نقط معاينة لـ ${esc(staffInfo(uid).name || userName(uid))}</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted" style="font-size:13px">لو عمل معاينة فعلاً بس سجّلها غلط ومنزلتلوش نقط. هتنزله +${PTS.v} نقط على اليوم اللي تختاره.</p>
+      <label class="f">يوم المعاينة</label><input class="in" type="date" id="avDay" value="${dayKey()}">
+      <label class="f">العميل / سبب الإضافة</label><input class="in" id="avNote" placeholder="مثلاً: معاينة مع أ/ محمود — اتكتبت ملاحظة">
+      <button class="btn block green" style="margin-top:12px" id="avBtn" onclick="App.addVwPtsGo('${esc(uid)}')">ضيف +${PTS.v} نقط</button>`);
+  },
+  async addVwPtsGo(uid){
+    const d = ($('#avDay') || {}).value, note = ($('#avNote') || {}).value ? $('#avNote').value.trim() : '';
+    if(!d) return toast('اختار اليوم');
+    if(note.length < 3) return toast('اكتب العميل أو السبب');
+    const b = $('#avBtn'); b.disabled = true;
+    const at = new Date(d + 'T12:00').getTime(), nm = staffInfo(uid).name || userName(uid);
+    try{
+      await scoreBumpFor(uid, nm, 'v', 1, at);
+      await store.setMeta(PEND_DOC, {items:{[pendId()]:{kind:'v', st:'ok', at, by:uid, byName:nm, teamId:teamOf(uid) || null, note:'(اتضافت يدوي) ' + note, flags:[], revBy:S.me.uid, revByName:S.me.name, revAt:Date.now()}}});
+      await store.addActivity({type:'viewing', at:Date.now(), by:S.me.uid, byName:S.me.name, leadId:null, leadName:'', note:`➕ ${S.me.name} ضاف نقط معاينة لـ ${nm} يوم ${d}: ${note}`, teamId:teamOf(uid) || null}).catch(() => {});
+      toast(`اتضافت +${PTS.v} نقط ✓`); App.person(uid);
+    }catch(e){ toast(fbError(e)); b.disabled = false; }
+  },
+  /* مراجعة القفلات القديمة — الأدمن بس */
+  closeReview(){
+    if(!isOwner()) return;
+    const list = oldClosings();
+    openSheet(`<div class="sheet-h"><h2>🧾 مراجعة القفلات القديمة (${list.length})</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted" style="font-size:13px">قبل التعديل، "اتقفلت بيع / إيجار" كانت ضمن نتايج المكالمة، وناس اختاروها لما العميل قالهم إن الوحدة اتباعت أو اتأجرت. لكل واحدة: لو كانت قفلة بتاعتنا فعلاً سيبها، ولو لأ حوّلها لـ "الوحدة مبقتش متاحة" والـ 20 نقطة هتتشال من التقرير اليومي والشهري.</p>
+      ${list.length ? list.map(l => { const h = closeHits(l), h0 = h[h.length - 1];
+        return `<div class="card" style="margin-top:8px"><div style="display:flex;align-items:center;gap:8px">${avatarHtml(h0.by, 34)}<div style="flex:1;min-width:0">
+          <b>${esc(h0.byName || userName(h0.by))}</b> · <span style="color:${STATUSES[h0.status].color};font-weight:800">${STATUSES[h0.status].label}</span>${h.length > 1 ? ` <span class="muted">(${h.length} مرات)</span>` : ''}
+          <div class="muted" style="font-size:12px"><a href="javascript:void 0" onclick="App.open('${l.id}')" style="color:var(--navy);font-weight:700">${esc(l.name || 'عميل')}</a>${l.project ? ' · ' + esc(l.project) : ''}${l.unit ? ' · ' + esc(l.unit) : ''} · ${fmt(h0.at)}</div></div></div>
+          ${h0.note ? `<div class="note" style="margin-top:6px;white-space:pre-wrap">"${esc(h0.note)}"</div>` : '<div class="muted" style="font-size:12px;margin-top:6px">مكتبش ملاحظة</div>'}
+          <div class="row" style="margin-top:8px"><button class="btn green" onclick="App.closeKeep('${l.id}')">✓ قفلة حقيقية</button><button class="btn danger" onclick="App.closeFix('${l.id}')">✕ الوحدة مبقتش متاحة</button></div></div>`; }).join('')
+      : '<div class="empty">خلصت المراجعة ✓ مفيش قفلات قديمة تانية</div>'}`);
+  },
+  async closeKeep(id){
+    try{ await store.updateLeads([id], {closeRev:'ok'}); const l = leadById(id); if(l) l.closeRev = 'ok'; toast('اتسابت قفلة حقيقية ✓'); App.closeReview(); }catch(e){ toast(fbError(e)); }
+  },
+  async closeFix(id){
+    const l = leadById(id); if(!l || !isOwner()) return;
+    const hits = closeHits(l), now = Date.now();
+    try{
+      // نشيل الـ 20 نقطة من نفس اليوم اللي اتحسبت فيه (من غير ما النقط تبقى بالسالب)
+      for(const h of hits){
+        const day = dayKey(h.at), o = ((S.scores || {})[day] || {})[h.by];
+        if(o && (+o.k || 0) > 0){ await scoreBumpFor(h.by, h.byName, 'k', -1, h.at); o.k = (+o.k || 0) - 1; }
+      }
+      const patch = {closeRev:'no'}; if(isClosedSt(l.status)) patch.status = 'unavailable';
+      await store.updateLeads([id], patch, {at:now, by:S.me.uid, byName:S.me.name, status:'assign', note:`🧾 ${S.me.name} راجع القفلة: مكانتش قفلة بتاعتنا — الوحدة مبقتش متاحة (اتشالت ${hits.length * PTS.k} نقطة)`});
+      Object.assign(l, patch);
+      toast(`اتصلحت ✓ واتشالت ${hits.length * PTS.k} نقطة`); App.closeReview(); render();
+    }catch(e){ toast(fbError(e)); }
+  },
+  // تسجيل قفلة حقيقية (بيع أو إيجار) — النقط بتنزل بعد موافقة المدير
+  closeSheet2(id){
+    const l = leadById(id); if(!l) return;
+    openSheet(`<div class="sheet-h"><h2>🏆 تسجيل قفلة — ${esc(l.name || 'العميل')}</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted" style="font-size:13px">ده للقفلة اللي <b>إحنا</b> عملناها مع العميل (بعناله أو أجّرناله). لو العميل قالك إن الوحدة اتباعت أو اتأجرت عن طريق حد تاني، ارجع واختار "الوحدة مبقتش متاحة" في سجل المكالمة.</p>
+      <div class="card">
+        <label class="f" style="margin-top:0">نوع القفلة</label><select class="sel" id="kType" style="margin:0"><option value="">—</option>${opts(DEALS, l.dealType)}</select>
+        <label class="f">قيمة الصفقة (السعر / الإيجار)</label><input class="in" id="kVal" inputmode="numeric" dir="ltr" value="${esc(l.dealValue ? Number(digitsOnly(l.dealValue)).toLocaleString('en-US') : '')}">
+        <label class="f">الوحدة</label><input class="in" id="kUnit" list="vwUnits2" value="${esc([l.project, l.unit].filter(Boolean).join(' – '))}">
+        <datalist id="vwUnits2">${[...new Set(S.units.map(u => [u.project, u.unitNo].filter(Boolean).join(' – ')).filter(Boolean))].slice(0, 400).map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+        <label class="f">تفاصيل (اختياري)</label><textarea class="in" id="kNote" placeholder="مثلاً: اتمضى العقد، العربون اتدفع"></textarea>
+        ${helpersOf(l).length ? `<div class="card" style="margin-top:10px;background:#ECFEFF;border-color:#A5F3FC;font-size:13px">🤝 <b>ساعد في المعاينة: ${esc(helpersOf(l).join('، '))}</b><div class="muted" style="font-size:12px">متنساش تتفق معاه على نسبته من العمولة</div></div>` : ''}
+        <button class="btn block green" style="margin-top:12px" id="kBtn" onclick="App.closeSave('${id}')">سجّل القفلة</button></div>`);
+  },
+  async closeSave(id){
+    const l = leadById(id); if(!l) return;
+    const deal = $('#kType').value, value = digitsOnly($('#kVal').value), unit = $('#kUnit').value.trim(), note = $('#kNote').value.trim();
+    if(!deal) return toast('اختار نوع القفلة');
+    if(!value) return toast('اكتب قيمة الصفقة');
+    const b = $('#kBtn'); b.disabled = true; b.textContent = 'بيحفظ...';
+    const status = deal === 'sale' ? 'closed' : 'closed_rent', now = Date.now();
+    const c = calcCommission({...l, dealType:deal, dealValue:value});
+    try{
+      await store.updateLeads([id], {status, lastContactAt:now, nextFollowUp:null, dealType:deal, dealValue:value, closeRev:'pend', closedAt:now, ...(c ? {commission:Math.round(c.amount)} : {})},
+        {at:now, by:S.me.uid, byName:S.me.name, status, note:`🏆 ${STATUSES[status].label}${unit ? ' — ' + unit : ''} · ${money(+value)}${note ? '\n' + note : ''}`});
+      await store.addActivity({type:'call', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', status, note:`🏆 قفلة${unit ? ' — ' + unit : ''}${note ? ': ' + note : ''}`, assignedTo:l.assignedTo || null, teamId:l.teamId || null});
+      if(!isClosedSt(l.status)) await addPending('k', {leadId:id, leadName:l.name || '', unit, deal, value, note, helpers:helpersOf(l)});
+      closeSheet(); toast(isOwner() ? 'اتسجلت القفلة ✓' : '🏆 اتسجلت القفلة ✓ — الـ 20 نقطة هتنزل بعد موافقة مديرك');
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'سجّل القفلة'; }
+  },
+  pxSheet(id){
+    const l = leadById(id); if(!l) return;
+    const list = pxColleagues();
+    const guess = [l.project, l.unit].filter(Boolean).join(' – ');
+    openSheet(`<div class="sheet-h"><h2>👥 زميل يعمل المعاينة مكانك</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted" style="font-size:13px">لو انت مشغول في معاينة تانية. الزميل هيشوف اسم العميل ورقمه والوحدة، ولوكيشنه هو اللي هيتبعت. <b>نقط المعاينة بتاعتك انت</b> (بعد موافقة المدير)، والعميل يفضل معاك، واسم زميلك هيتكتب في سجل العميل عشان لو اتقفل تتفقوا على نسبته.</p>
+      <div class="card">
+        <label class="f" style="margin-top:0">مين يروح مكانك؟</label>
+        <select class="sel" id="pxTo" style="margin:0"><option value="">اختار زميل...</option>${list.map(u => `<option value="${u.uid}">${esc(u.name)}${u.role !== 'sales' ? ' (' + ROLE_LABEL[u.role] + ')' : ''}</option>`).join('')}</select>
+        <label class="f">الوحدة / المشروع</label><input class="in" id="pxUnit" list="vwUnits3" value="${esc(guess)}">
+        <datalist id="vwUnits3">${[...new Set(S.units.map(u => [u.project, u.unitNo].filter(Boolean).join(' – ')).filter(Boolean))].slice(0, 400).map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+        <label class="f">ميعاد المعاينة</label><input class="in" type="datetime-local" id="pxWhen" value="${l.nextFollowUp && l.nextFollowUp > Date.now() ? toLocalInput(l.nextFollowUp) : ''}">
+        <label class="f">ملاحظات للزميل (اختياري)</label><textarea class="in" id="pxMsg" placeholder="مثلاً: العميل عايز يشوف الشقة والجنينة، ميزانيته 25 ألف"></textarea>
+        <button class="btn block" style="margin-top:12px;background:#0E7490" id="pxBtn" onclick="App.pxSend('${id}')">ابعت الطلب</button></div>`);
+  },
+  async pxSend(id){
+    const l = leadById(id), to = $('#pxTo').value; if(!l) return;
+    if(!to) return toast('اختار الزميل الأول');
+    const unit = $('#pxUnit').value.trim(), when = $('#pxWhen').value ? new Date($('#pxWhen').value).getTime() : null, msg = $('#pxMsg').value.trim();
+    const um = unit ? S.units.find(u => [u.project, u.unitNo].filter(Boolean).join(' – ') === unit) : null;
+    const t = staffInfo(to), now = Date.now(), pid = pendId();
+    const b = $('#pxBtn'); b.disabled = true; b.textContent = 'بيبعت...';
+    try{
+      await store.setMeta(PROXY_DOC, {items:{[pid]:{leadId:id, leadName:l.name || '', phone:l.phone || '', unit, unitId:um ? um.id : null, when, msg, owner:S.me.uid, ownerName:S.me.name, teamId:l.teamId || teamOf(S.me.uid) || null, to, toName:t.name || '', at:now, st:'sent'}}});
+      await store.updateLeads([id], {lastContactAt:now}, {at:now, by:S.me.uid, byName:S.me.name, status:'assign', note:`👥 ${S.me.name} بعت ${t.name || 'زميل'} يعمل المعاينة مكانه${unit ? ' — ' + unit : ''}${when ? ' · ' + fmt(when) : ''}`});
+      closeSheet();
+      openSheet(`<div class="sheet-h"><h2>✓ الطلب اتبعت لـ ${esc(t.name || '')}</h2><button class="x" onclick="App.close()">×</button></div>
+        <p class="muted">هيظهرله في الرئيسية ويجيله تنبيه. بلّغه كمان على واتساب عشان يلحق:</p>
+        ${t.phone ? `<a class="btn block" style="background:#25D366" href="https://wa.me/${waNum(t.phone)}?text=${encodeURIComponent(`👥 ممكن تعمل معاينة مكاني؟\nالعميل: ${l.name || ''}${unit ? '\nالوحدة: ' + unit : ''}${when ? '\nالميعاد: ' + fmt(when) : ''}${msg ? '\n' + msg : ''}\nالتفاصيل عندك في الأبليكيشن`)}" target="_blank" rel="noopener">ابعت لـ ${esc(t.name)} واتساب</a>` : ''}
+        <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">تمام</button>`);
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'ابعت الطلب'; }
+  },
+  async pxCancel(pid){
+    const x = (S.proxy || {})[pid]; if(!x || x.st !== 'sent') return;
+    try{ await store.setMeta(PROXY_DOC, {items:{[pid]:{st:'cancel', cancelAt:Date.now()}}}); toast('اتلغى الطلب'); if(S.openId) setTimeout(() => App.open(S.openId), 300); }catch(e){ toast(fbError(e)); }
+  },
+  async pxStart(pid){
+    const x = (S.proxy || {})[pid]; if(!x || x.st !== 'sent' || x.to !== S.me.uid) return;
+    if(myViewing() || pxActive()) return toast('انت أصلاً في معاينة — خلّصها الأول');
+    toast('بيحدد مكانك...');
+    let pos = null; try{ pos = await getPosition(); }catch(e){ toast(e.message + ' — المعاينة هتبدأ من غير مكان'); }
+    const now = Date.now(), u = x.unitId ? unitById(x.unitId) : null;
+    try{
+      await store.setMeta(PROXY_DOC, {items:{[pid]:{st:'active', start:now, ...(pos ? {lat:pos.lat, lng:pos.lng, sLat:pos.lat, sLng:pos.lng, posAt:now} : {}), ...(pos && u && u.loc && u.loc.lat ? {minD:distM(pos, u.loc)} : {})}}});
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:x.leadId, leadName:x.leadName || '', note:`${S.me.name} طلع معاينة مع ${x.leadName || 'عميل'} بالنيابة عن ${x.ownerName}${x.unit ? ' — ' + x.unit : ''}`, teamId:x.teamId || myTeam(), ...(pos ? {lat:pos.lat, lng:pos.lng} : {})}).catch(() => {});
+      pxTrack(pid); if(PX && pos) PX.pos = pos;
+      toast('بدأت المعاينة ✓'); render();
+      setTimeout(() => App.vwWhatsPx(pid), 300);
+    }catch(e){ toast(fbError(e)); }
+  },
+  vwWhatsPx(pid){
+    const x = (S.proxy || {})[pid]; if(!x) return;
+    const m = vwManager();
+    const msg = `📍 أنا طالع معاينة دلوقتي بالنيابة عن ${x.ownerName}\nالعميل: ${x.leadName || '—'}${x.unit ? '\nالوحدة: ' + x.unit : ''}${x.lat ? '\nمكاني: ' + mapsUrl(x) : ''}\nهبعتلك اللوكيشن اللايف دلوقتي.`;
+    openSheet(`<div class="sheet-h"><h2>ابعت لمديرك على واتساب</h2><button class="x" onclick="App.close()">×</button></div>
+      ${m ? `<p class="muted">هيفتحلك محادثة <b>${esc(m.name)}</b> وفيها رسالة جاهزة. ابعتها وبعدين شارك اللوكيشن اللايف (📎 ← Location ← Share live location).</p>
+        <a class="btn block" style="margin-top:12px;background:#25D366" href="https://wa.me/${waNum(m.phone)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">افتح واتساب ${esc(m.name)}</a>`
+      : '<div class="err">مفيش رقم موبايل متسجل لمديرك — مكانك لسه بيتبعت جوه الأبليكيشن عادي.</div>'}
+      <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">بعدين</button>`);
+  },
+  pxEnd(pid){
+    const x = (S.proxy || {})[pid]; if(!x || x.st !== 'active') return;
+    openSheet(`<div class="sheet-h"><h2>✓ إنهاء المعاينة</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted">اللي هتكتبه هيوصل لـ <b>${esc(x.ownerName)}</b> في سجل العميل، والنقط ليه بعد موافقة المدير. واسمك هيتسجل إنك ساعدت في المعاينة.</p>
+      <label class="f">حصل إيه في المعاينة؟</label><textarea class="in" id="pxNote" style="min-height:90px" placeholder="مثلاً: العميل عجبته الشقة وعايز يتفاوض على السعر"></textarea>
+      <button class="btn block green" style="margin-top:12px" id="pxDoneBtn" onclick="App.pxDone('${pid}')">إنهاء المعاينة</button>
+      <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">لسه مخلصتش</button>`);
+  },
+  async pxDone(pid){
+    const x = (S.proxy || {})[pid]; if(!x || x.st !== 'active') return;
+    const note = ($('#pxNote') || {}).value ? $('#pxNote').value.trim() : '';
+    if(note.length < 3) return toast('اكتب حصل إيه في المعاينة الأول');
+    const b = $('#pxDoneBtn'); b.disabled = true; b.textContent = 'بيقفل المعاينة...';
+    let pos = PX && PX.id === pid && PX.pos ? PX.pos : null; if(!pos) try{ pos = await getPosition(); }catch(e){}
+    const now = Date.now(), mins = Math.max(1, Math.round((now - x.start) / 60000));
+    const v = {...x, ...(PX && PX.id === pid && PX.minD != null ? {minD:PX.minD} : {})};
+    const lp = pos && pos.lat ? pos : x.lat ? {lat:x.lat, lng:x.lng} : null;
+    try{
+      await store.setMeta(PROXY_DOC, {items:{[pid]:{st:'done', end:now, mins, note, ...(lp ? {lat:lp.lat, lng:lp.lng} : {})}}});
+      pxStopTrack();
+      // النقط لصاحب العميل — بتروح لمديره يوافق عليها
+      await store.setMeta(PEND_DOC, {items:{[pendId()]:{kind:'v', st:'pending', at:now, by:x.owner, byName:x.ownerName, teamId:x.teamId || null, leadId:x.leadId, leadName:x.leadName || '', unit:x.unit || '', unitId:x.unitId || null, start:x.start, mins, note, proxyBy:S.me.uid, proxyName:S.me.name, flags:vwFlags(v, pos, mins), ...(lp ? {lat:lp.lat, lng:lp.lng} : {})}}});
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:x.leadId, leadName:x.leadName || '', note:`${S.me.name} خلّص معاينة مع ${x.leadName || 'عميل'} بالنيابة عن ${x.ownerName} (${mins} دقيقة): "${note}"`, teamId:x.teamId || myTeam()}).catch(() => {});
+      closeSheet(); toast(`✓ اتقفلت المعاينة — اتبعتت لـ ${x.ownerName}`); render();
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'إنهاء المعاينة'; }
+  },
+  archiveLead(id){
+    const l = leadById(id); if(!l) return;
+    const now = Date.now();
+    store.updateLeads([id], {status:'notinterested', nextFollowUp:null}, {at:now, by:S.me.uid, byName:S.me.name, status:'notinterested', note:'📦 اتنقل للأرشيف بعد 3 مرات من غير رد — هيرجع يظهر بعد 3 شهور نجرّبه تاني'})
+      .then(() => { closeSheet(); toast('📦 اتنقل للأرشيف ✓'); }).catch(e => toast(fbError(e)));
+  },
   src(v){ S.f.src = v; S.limit = 60; render(); },
   bySrc(k){ S.f = {...F0(), src:k === 'sheet' ? 'all' : k, kind:k === 'sheet' ? 'data' : 'lead'}; S._keepFilter = true; App.go(k === 'sheet' ? 'data' : 'leads'); },
   unitsSoon(){ S.uf = {...UF0(), st:'soon'}; App.go('units'); },
@@ -3693,6 +4152,8 @@ const App = window.App = {
   stChange(){
     const v = (document.querySelector('input[name=st]:checked') || {}).value;
     const box = $('#fuBox'); box.classList.toggle('hidden', !OPEN.has(v));
+    const ub = $('#unavBox'); if(ub) ub.classList.toggle('hidden', v !== 'unavailable');
+    const vb = $('#viewedBox'); if(vb) vb.classList.toggle('hidden', v !== 'viewed');
     $('#fuReq').textContent = v === 'followup' || v === 'viewing' ? '(لازم)' : '(اختياري)';
     $('#fuLbl').textContent = v === 'viewing' ? 'ميعاد المعاينة' : 'ميعاد المتابعة الجاية';
     if(v === 'noanswer' && !$('#fuIn').value) App.fu(3);
@@ -3732,8 +4193,31 @@ const App = window.App = {
       await store.updateLeads([l.id], patch, hist);
       await store.addActivity({type:'call', at:now, by:S.me.uid, byName:S.me.name, leadId:l.id, leadName:l.name || '', status, note, voice:hist.voice || null, assignedTo:l.assignedTo || null, teamId:l.teamId || null});
       if(!(l.history || []).some(h => h.by === S.me.uid && now - h.at < 10 * 60e3)) scoreBump('c');
-      if(isClosedSt(status) && !isClosedSt(l.status)) scoreBump('k');
-      closeSheet(); toast('اتسجّلت ✓');
+      // "تمت المعاينة": لو هو في معاينة شغالة مع العميل ده تتقفل، ولو لأ تروح لمديرك يوافق على نقطها
+      if(status === 'viewed'){
+        const v = l.viewing;
+        if(v && v.active && v.by === S.me.uid){ let pos = VW && VW.pos ? VW.pos : null; await vwFinish(l, pos, atOffice(pos) ? 'office' : 'self', note, true); }
+        else await addPending('v', {leadId:l.id, leadName:l.name || '', unit:[l.project, l.unit].filter(Boolean).join(' – '), note, flags:['اتسجلت من سجل المكالمة من غير زرار "طالع معاينة" — مفيش مكان ولا وقت متسجل']}).catch(() => {});
+      }
+      // "الوحدة مبقتش متاحة": لو الوحدة متسجلة عندنا تتقفل في الوحدات
+      if(status === 'unavailable'){
+        const how = (document.querySelector('input[name=unav]:checked') || {}).value || 'sold';
+        const u = (l.movedToUnit && unitById(l.movedToUnit)) || (l.unit ? S.units.find(x => x.unitNo && String(x.unitNo).trim() === String(l.unit).trim() && (!l.project || projKey(x.project) === projKey(l.project))) : null);
+        if(u && canEditUnit(u) && !['sold', 'rented'].includes(u.status)) store.saveUnit(u.page, u.id, {status:how, ...upStamp(how === 'sold' ? 'الوحدة اتباعت (من سجل المكالمة)' : 'الوحدة اتأجرت (من سجل المكالمة)')}).then(() => toast('🏠 الوحدة اتقفلت في الوحدات كمان')).catch(() => {});
+      }
+      // 3 مرات ورا بعض ماردش؟ نسأله ينقله للأرشيف
+      if(status === 'noanswer'){
+        const hs = [...(l.history || []), hist].filter(h => STATUSES[h.status]).sort((a, b) => b.at - a.at);
+        let n = 0; for(const h of hs){ if(h.status !== 'noanswer') break; n++; }
+        if(n >= 3){
+          openSheet(`<div class="sheet-h"><h2>📵 ${esc(l.name || 'العميل')} ماردش ${n} مرات</h2><button class="x" onclick="App.close()">×</button></div>
+            <p class="muted">تحب تنقله للأرشيف؟ هيختفي من قايمتك عشان ميزحمهاش، ومش هيتمسح — وبعد 3 شهور هيرجعلك في "عملاء قدام نجرّبهم تاني".</p>
+            <button class="btn block" style="background:#475569" onclick="App.archiveLead('${l.id}')">📦 انقله للأرشيف</button>
+            <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">لأ، هجرّب تاني</button>`);
+          toast('اتسجّلت ✓'); return;
+        }
+      }
+      closeSheet(); toast(status === 'viewed' && !isOwner() ? 'اتسجّلت ✓ — نقط المعاينة هتنزل بعد موافقة مديرك' : status === 'notinterested' ? '📦 اتسجّلت ✓ والعميل اتنقل للأرشيف' : 'اتسجّلت ✓');
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'حفظ'; }
   },
   async reassign(){
@@ -4725,24 +5209,27 @@ Object.assign(App, {
     const l = leadById(id); if(!l) return;
     const guess = [l.project, l.unit].filter(Boolean).join(' – ');
     openSheet(`<div class="sheet-h"><h2>🚶 معاينة مع ${esc(l.name || 'العميل')}</h2><button class="x" onclick="App.close()">×</button></div>
-      <p class="muted">أول ما تبدأ، مكانك هيتبعت لمديرك كل دقيقة طول ما الأبليكيشن مفتوح. المعاينة بتتقفل لوحدها أول ما ترجع المكتب وتفتح الأبليكيشن، ولو مش راجع المكتب هتبعت طلب إنهاء لمديرك يوافق عليه.</p>
-      <div class="card"><label class="f">الوحدة / المشروع (اختياري)</label>
+      <p class="muted">أول ما تبدأ، مكانك هيتبعت لمديرك كل دقيقة طول ما الأبليكيشن مفتوح. لما تخلص دوس "خلصت المعاينة" — ولو رجعت المكتب بتتقفل لوحدها.</p>
+      <div class="muted" style="font-size:12.5px">⭐ اختار الوحدة من القايمة عشان مديرك يشوف إنك كنت عندها فعلاً ويوافق على النقط بسرعة.</div>
+      <div class="card"><label class="f">الوحدة / المشروع</label>
         <input class="in" id="vwUnit" list="vwUnits" value="${esc(guess)}" placeholder="مثلاً: Allegria – فيلا B12">
         <datalist id="vwUnits">${[...new Set(S.units.map(u => [u.project, u.unitNo].filter(Boolean).join(' – ')).filter(Boolean))].slice(0, 400).map(t => `<option value="${esc(t)}">`).join('')}</datalist>
         <button class="btn block" style="margin-top:12px;background:#16A34A" id="vwGo" onclick="App.vwStart('${id}')">ابدأ المعاينة</button></div>`);
   },
   async vwStart(id){
     const l = leadById(id); if(!l) return;
-    if(myViewing()) return toast('انت أصلاً في معاينة — خلّصها الأول');
+    if(myViewing() || pxActive()) return toast('انت أصلاً في معاينة — خلّصها الأول، أو ابعت زميل مكانك من صفحة العميل');
     const b = $('#vwGo'); b.disabled = true; b.textContent = 'بيحدد مكانك...';
     let pos = null;
     try{ pos = await getPosition(); }catch(e){ toast(e.message + ' — المعاينة هتبدأ من غير مكان'); }
     const now = Date.now(), unit = ($('#vwUnit') || {}).value ? $('#vwUnit').value.trim() : '';
-    const v = {active:true, start:now, at:pos ? now : null, unit, by:S.me.uid, byName:S.me.name, ...(pos || {}), left:!!(pos && awayOffice(pos))};
+    const um = unit ? S.units.find(u => [u.project, u.unitNo].filter(Boolean).join(' – ') === unit) : null;
+    const v = {active:true, start:now, at:pos ? now : null, unit, unitId:um ? um.id : null, by:S.me.uid, byName:S.me.name, ...(pos || {}), ...(pos ? {sLat:pos.lat, sLng:pos.lng} : {}), left:!!(pos && awayOffice(pos)), np:1};
+    if(um && um.loc && um.loc.lat && pos) v.minD = distM(pos, um.loc);
     try{
       await store.updateLeads([id], {viewing:v});
       await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:id, leadName:l.name || '', note:`${S.me.name} طلع معاينة مع ${l.name || 'عميل'}${unit ? ' — ' + unit : ''}`, teamId:l.teamId || myTeam(), ...(pos ? {lat:pos.lat, lng:pos.lng} : {})});
-      l.viewing = v; vwTrack(id); scoreBump('v');
+      l.viewing = v; vwTrack(id);
       closeSheet(); toast('بدأت المعاينة ✓'); render();
       setTimeout(() => App.vwWhats(id), 250);
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'ابدأ المعاينة'; }
@@ -4765,6 +5252,18 @@ Object.assign(App, {
     let pos = VW && VW.leadId === id && VW.pos && Date.now() - (VW.posAt || 0) < 60000 ? VW.pos : null;
     if(!pos) try{ pos = await getPosition(); }catch(e){}
     if(b){ b.disabled = false; b.textContent = 'خلصت المعاينة'; }
+    if(l.viewing.np){
+      S._vwPos = pos;
+      openSheet(`<div class="sheet-h"><h2>✓ إنهاء المعاينة</h2><button class="x" onclick="App.close()">×</button></div>
+        <p class="muted">المعاينة هتتقفل دلوقتي وتقدر تبدأ اللي بعدها على طول. مكانك ووقت المعاينة هيتبعتوا لمديرك عشان يوافق على النقط.</p>
+        <label class="f">حصل إيه في المعاينة؟</label><textarea class="in" id="vwNote" style="min-height:90px" placeholder="مثلاً: العميل عجبته الشقة وعايز يتفاوض على السعر"></textarea>
+        <label class="f">المتابعة الجاية مع العميل (اختياري)</label>
+        <div class="quick"><button type="button" onclick="$('#vwFu').value=toLocalInput(Date.now()+3*36e5)">بعد 3 ساعات</button><button type="button" onclick="$('#vwFu').value=toLocalInput(startOfDay()+DAY+12*36e5)">بكرة</button><button type="button" onclick="$('#vwFu').value=toLocalInput(Date.now()+72*36e5)">بعد 3 أيام</button></div>
+        <input class="in" type="datetime-local" id="vwFu">
+        <button class="btn block green" style="margin-top:12px" id="vwDoneBtn" onclick="App.vwDone('${id}')">إنهاء المعاينة</button>
+        <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">لسه مخلصتش</button>`);
+      return;
+    }
     if(atOffice(pos) || isBoss()){
       try{ await vwFinish(l, pos, atOffice(pos) ? 'office' : 'self'); closeSheet(); toast('اتسجلت المعاينة ✓ — متنساش تكتب حصل إيه مع العميل'); render(); setTimeout(() => App.open(id), 300); }
       catch(e){ toast(fbError(e)); }
@@ -4777,6 +5276,19 @@ Object.assign(App, {
         <label class="f">حصل إيه في المعاينة؟</label><textarea class="in" id="vwNote" style="min-height:80px" placeholder="مثلاً: العميل عجبته الشقة وعايز يتفاوض على السعر"></textarea>
         <button class="btn block" style="margin-top:10px" id="vwReqBtn" onclick="App.vwReq('${id}')">ابعت طلب الإنهاء لمديرك</button></div>
       <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">هرجع المكتب</button>`);
+  },
+  async vwDone(id){
+    const l = leadById(id); if(!l || !l.viewing || !l.viewing.active) return;
+    const note = ($('#vwNote') || {}).value ? $('#vwNote').value.trim() : '';
+    if(note.length < 3) return toast('اكتب حصل إيه في المعاينة الأول');
+    const fu = ($('#vwFu') || {}).value ? new Date($('#vwFu').value).getTime() : null;
+    const b = $('#vwDoneBtn'); b.disabled = true; b.textContent = 'بيقفل المعاينة...';
+    const pos = S._vwPos;
+    try{
+      await vwFinish(l, pos, atOffice(pos) ? 'office' : 'self', note);
+      if(fu) await store.updateLeads([id], {nextFollowUp:fu}).catch(() => {});
+      closeSheet(); toast(isOwner() ? 'اتقفلت المعاينة ✓' : '✓ اتقفلت المعاينة — النقط هتنزل بعد موافقة مديرك'); render();
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'إنهاء المعاينة'; }
   },
   async vwReq(id){
     const l = leadById(id); if(!l || !l.viewing || !l.viewing.active) return;
@@ -4851,8 +5363,8 @@ Object.assign(App, {
       for(const u of Object.values(S.users)){
         if(u.replacedBy) continue;
         const m = S.staff[u.uid] || {};
-        if((m.name || '') !== (u.name || '') || (m.phone || '') !== (u.phone || '') || (m.role || '') !== (u.role || '') || (m.leaderId || null) !== (u.leaderId || null))
-          await store.setStaff(u.uid, {name:u.name || '', phone:u.phone || '', role:u.role || '', leaderId:u.leaderId || null});
+        if((m.name || '') !== (u.name || '') || (m.phone || '') !== (u.phone || '') || (m.role || '') !== (u.role || '') || (m.leaderId || null) !== (u.leaderId || null) || (m.active !== false) !== (u.active !== false))
+          await store.setStaff(u.uid, {name:u.name || '', phone:u.phone || '', role:u.role || '', leaderId:u.leaderId || null, active:u.active !== false});
       }
     }catch(e){}
     setTimeout(() => { S._staffSync = false; }, 30000);
@@ -4971,12 +5483,17 @@ setInterval(() => { if(S.me && !document.activeElement.matches('input,textarea,s
 var ALERT_PREV = null;
 setInterval(() => {
   if(!S.me || !S.leadsLoaded) return;
+  pxSync();
+  { const a = pxActive(); if(a) pxTrack(a.id); else pxStopTrack(); }
   const mine = l => isAdmin() || l.assignedTo === S.me.uid;
   const now = {late:S.leads.filter(l => mine(l) && isLateFirst(l)).length, rep:reportLate() ? 1 : 0,
-    pend:canApprove() ? S.units.filter(u => u.pendingDup).length : 0, vreq:vwReqs().length, soon:S.units.filter(u => isSoon(u) && (isAdmin() ? myUnitsScope(u) : u.agentId === S.me.uid)).length};
+    pend:canApprove() ? S.units.filter(u => u.pendingDup).length : 0, vreq:vwReqs().length, pts:pendForMe().length, px:pxMine().filter(x => x.st === 'sent').length, cmt:commFor(S.me.uid).filter(c => !c.seen).length, soon:S.units.filter(u => isSoon(u) && (isAdmin() ? myUnitsScope(u) : u.agentId === S.me.uid)).length};
   if(ALERT_PREV && S.me.uid === ALERT_PREV.uid){
     if(now.late > ALERT_PREV.late){ toast(`⚠️ عميل عدّى عليه ${hoursTxt(cfg('firstContactHours'))} من غير تواصل`); beep('late'); }
     else if(now.rep > ALERT_PREV.rep){ toast(`📝 عدّى ميعاد التقرير (${RH()}) — ابعته دلوقتي`); beep('late'); }
+    else if(now.px > (ALERT_PREV.px || 0)){ toast('👥 زميلك طالب تروح مكانه معاينة — شوفها في الرئيسية'); beep('info'); }
+    else if(now.pts > (ALERT_PREV.pts || 0)){ toast('⭐ معاينة أو قفلة مستنية موافقتك على النقط — شوفها في الرئيسية'); beep('info'); }
+    else if(now.cmt > (ALERT_PREV.cmt || 0)){ toast('💬 مديرك بعتلك ملاحظة — شوفها في الرئيسية'); beep('info'); }
     else if(now.vreq > (ALERT_PREV.vreq || 0)){ toast('🚶 طلب إنهاء معاينة مستني موافقتك — شوفه في الرئيسية'); beep('info'); }
     else if(now.pend > ALERT_PREV.pend){ toast('⏳ وحدة جديدة مستنية موافقتك (متكررة أو لمالك عنده وحدة تانية)'); beep('info'); }
     else if(now.soon > ALERT_PREV.soon){ toast('🏠 وحدة متأجرة قرب ميعاد فضيانها'); beep('info'); }
