@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>بحث السوق</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="بحث السوق">
+<meta name="theme-color" content="#5B21B6">
+<link rel="apple-touch-icon" href="market-touch.png">
+<link rel="manifest" href="market.webmanifest">
+<script>
+  // لو اتفتحت من أيقونة الشاشة الرئيسية: تروح على صفحة بحث السوق جوه Blue على طول
+  var standalone = window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if(standalone) location.replace('index.html#market');
+</script>
+<style>
+  :root{color-scheme:light}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;background:#F5F3FF;color:#1E1B4B}
+  .w{max-width:460px;margin:0 auto;padding:28px 16px}
+  .card{background:#fff;border-radius:18px;padding:20px;box-shadow:0 8px 24px rgba(91,33,182,.12)}
+  img{width:84px;height:84px;border-radius:20px;display:block;margin:0 auto 10px}
+  h1{text-align:center;margin:0 0 6px;font-size:22px;color:#5B21B6}
+  p{line-height:1.8;font-size:15px;margin:8px 0}
+  ol{padding-right:20px;line-height:2;font-size:15px}
+  a.b{display:block;text-align:center;margin-top:16px;padding:13px;border-radius:14px;background:#7C3AED;color:#fff;text-decoration:none;font-weight:700}
+</style>
+</head>
+<body>
+<div class="w"><div class="card">
+  <img src="market-touch.png" alt="">
+  <h1>🌐 بحث السوق</h1>
+  <p>عشان تحط أيقونة "بحث السوق" لوحدها على شاشة الموبايل:</p>
+  <ol>
+    <li><b>آيفون:</b> افتح الصفحة دي في Safari ← دوس زرار المشاركة ⬆️ ← "Add to Home Screen" (إضافة إلى الشاشة الرئيسية).</li>
+    <li><b>أندرويد:</b> من Chrome دوس ⋮ ← "Add to Home screen". أو دوس ضغطة طويلة على أيقونة Blue هتلاقي "بحث السوق".</li>
+  </ol>
+  <p>بعد كده لما تدوس على الأيقونة هتفتحلك صفحة البحث على طول.</p>
+  <a class="b" href="index.html#market">افتح بحث السوق دلوقتي</a>
+</div></div>
+</body>
+</html>

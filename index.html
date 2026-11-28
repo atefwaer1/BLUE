@@ -179,6 +179,29 @@ textarea.in{min-height:80px;resize:vertical}
 #toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;
   background:var(--ink);color:#fff;padding:10px 18px;border-radius:12px;font-size:14px;font-weight:600;transition:.25s;z-index:80;max-width:90vw;text-align:center}
 #toast.show{opacity:1;transform:translateX(-50%)}
+
+/* 🌐 بحث السوق — لون بنفسجي مختلف عن بحث وحداتنا */
+.mkentry{display:flex;align-items:center;gap:12px;width:100%;margin:2px 0 12px;padding:12px 14px;border:0;border-radius:16px;text-align:right;cursor:pointer;
+  background:linear-gradient(135deg,#5B21B6,#7C3AED);color:#fff;box-shadow:0 6px 18px rgba(91,33,182,.28)}
+.mkentry .mki{font-size:28px}.mkentry div{flex:1}.mkentry b{display:block;font-size:16px}.mkentry small{display:block;opacity:.85;font-size:12.5px;margin-top:2px}.mkentry .mkgo{font-size:26px;opacity:.8}
+.mkhero{background:linear-gradient(160deg,#4C1D95,#6D28D9 60%,#7C3AED);color:#fff;border-radius:18px;padding:16px 14px;margin-top:4px}
+.mkh1{font-size:20px;font-weight:800}.mkh2{font-size:13px;opacity:.9;margin-top:4px;line-height:1.7}
+.mkbox{background:rgba(255,255,255,.12);border-radius:14px;padding:10px;margin-top:12px}
+.mkbox .in{background:#fff;color:#1E1B4B;margin:0;font-size:15px}
+.mkbox .chip{background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.3)}.mkbox .chip.on{background:#fff;color:#5B21B6}
+.btn.mkbtn{background:#7C3AED;color:#fff}.mkbox .btn.mkbtn{background:#fff;color:#5B21B6;font-weight:800}
+.btn.mkmic{background:#F5F3FF;color:#5B21B6;font-weight:800}.btn.mkmic.listening{background:#DC2626;color:#fff;animation:mkpulse 1s infinite}
+@keyframes mkpulse{50%{box-shadow:0 0 0 8px rgba(220,38,38,.25)}}
+.chip.mkchip{background:#EDE9FE;color:#4C1D95;border-color:#C4B5FD}
+.mkall{display:block;text-decoration:none;margin-top:10px;padding:14px;border-radius:16px;background:#5B21B6;color:#fff;text-align:center;box-shadow:0 6px 16px rgba(91,33,182,.3)}
+.mkall b{display:block;font-size:16px}.mkall small{display:block;opacity:.85;font-size:12.5px;margin-top:2px}
+.mkgrid{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}
+@media(min-width:620px){.mkgrid{grid-template-columns:1fr 1fr}}
+.mksite{background:var(--card);border:1px solid #DDD6FE;border-right:4px solid #7C3AED;border-radius:14px;padding:10px 12px}
+.mkname{font-weight:800;font-size:14.5px}.mksite .btn{flex:1;text-align:center;text-decoration:none}.btn.mkopen{background:#7C3AED;color:#fff}
+.mknote{font-size:11.5px;color:var(--muted);margin-top:6px}
+.mktips{margin-top:10px;background:#FFFBEB;border-color:#FDE68A;font-size:12.5px;line-height:1.8;color:#78350F}
+.mkhist{display:block;width:100%;text-align:right;border:0;border-bottom:1px solid var(--line);background:none;padding:9px 2px;font-size:13.5px;color:var(--ink);cursor:pointer}
 /* إشعارات بتستنى لحد ما تدوس عليها */
 #notis{position:fixed;left:50%;transform:translateX(-50%);top:calc(70px + env(safe-area-inset-top));z-index:45;width:min(520px,calc(100vw - 20px));
   display:flex;flex-direction:column;gap:7px;max-height:68vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
@@ -1143,7 +1166,7 @@ function unitsView(){
   const projs = S.ufOpen ? projectOptions() : [];
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 style="margin:6px 2px 10px">الوحدات (${S.units.filter(canSeePending).length})</h2>
-      <div class="row" style="flex:none;gap:6px"><button class="btn mini" onclick="App.unitForm()">＋ وحدة</button>
+      <div class="row" style="flex:none;gap:6px"><button class="btn mini mkbtn" onclick="App.go('market')">🌐 السوق</button><button class="btn mini" onclick="App.unitForm()">＋ وحدة</button>
       ${isBoss() ? `<label class="btn ghost mini">رفع شيت<input type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="App.invFile(this.files[0])"></label>` : ''}</div></div>
     ${isBoss() && dupGroups().length ? (() => { const g = dupGroups(), extra = g.reduce((n, a) => n + a.length - 1, 0); return `<div class="card" style="margin-bottom:10px;background:#FEF2F2;border-color:#FCA5A5">
       <b style="color:#B91C1C">⚠️ فيه ${extra} نسخة مكررة لـ ${g.length} وحدة (نفس الكود متسجل أكتر من مرة)</b>
@@ -2158,6 +2181,162 @@ const staffList = () => Object.values(S.users).filter(u => u.role !== 'admin' &&
   && (isBoss() || u.leaderId === S.me.uid));
 const uidsOf = id => { const u = S.users[id]; return u ? [u.uid, ...(u.prevUids || [])] : [id]; };
 
+/* =====================================================================
+   🌐 بحث السوق — إعلانات المواقع التانية (مش وحداتنا)
+   بتقول طلبك بالصوت أو تكتبه، والسيستم يجهّز البحث على كل موقع
+   على الأحدث بس (آخر أسبوع / أسبوعين)
+   ===================================================================== */
+const MK_SITES = [
+  {k:'dubizzle', name:'دوبيزل', host:'dubizzle.com.eg', ic:'🟥'},
+  {k:'pf', name:'بروبرتي فايندر', host:'propertyfinder.eg', ic:'🟪'},
+  {k:'aqarmap', name:'عقار ماب', host:'aqarmap.com.eg', ic:'🟦'},
+  {k:'fbm', name:'فيسبوك ماركت بليس', host:'facebook.com', ic:'🛒'},
+  {k:'fbp', name:'بوستات وجروبات فيسبوك', host:'facebook.com', ic:'👥'},
+  {k:'opensooq', name:'السوق المفتوح', host:'eg.opensooq.com', ic:'🟩'},
+];
+// نوع الوحدة: عربي للبحث المصري، إنجليزي للمواقع
+const MK_TYPES = [
+  {re:/ارضي|جاردن|جنينه|حديقه|ground|garden/, ar:'أرضي بحديقة', arQ:'(ارضي OR جاردن OR حديقة)', en:'ground floor garden', enQ:'(ground OR garden)', cat:'apt', aq:'ground-floor'},
+  {re:/روف|roof/, ar:'روف', arQ:'روف', en:'roof', enQ:'roof', cat:'apt', aq:'apartment'},
+  {re:/بنتهاوس|penthouse/, ar:'بنتهاوس', arQ:'بنتهاوس', en:'penthouse', enQ:'penthouse', cat:'apt', aq:'penthouse'},
+  {re:/دوبلكس|duplex/, ar:'دوبلكس', arQ:'دوبلكس', en:'duplex', enQ:'duplex', cat:'apt', aq:'duplex'},
+  {re:/استوديو|ستوديو|studio/, ar:'استوديو', arQ:'استوديو', en:'studio', enQ:'studio', cat:'apt', aq:'studio'},
+  {re:/توين|twin/, ar:'توين هاوس', arQ:'توين', en:'twin house', enQ:'twin', cat:'villa', aq:'twin-house'},
+  {re:/تاون|town/, ar:'تاون هاوس', arQ:'تاون', en:'town house', enQ:'townhouse', cat:'villa', aq:'townhouse'},
+  {re:/فيلا|فيلل|فلل|villa/, ar:'فيلا', arQ:'فيلا', en:'villa', enQ:'villa', cat:'villa', aq:'villa'},
+  {re:/شاليه|chalet/, ar:'شاليه', arQ:'شاليه', en:'chalet', enQ:'chalet', cat:'apt', aq:'chalet'},
+  {re:/عياده|clinic/, ar:'عيادة', arQ:'عيادة', en:'clinic', enQ:'clinic', cat:'com', aq:'clinic'},
+  {re:/مكتب|اداري|office/, ar:'مكتب إداري', arQ:'(مكتب OR اداري)', en:'office', enQ:'office', cat:'com', aq:'office-space'},
+  {re:/محل|تجاري|shop|retail/, ar:'محل تجاري', arQ:'(محل OR تجاري)', en:'shop', enQ:'shop', cat:'com', aq:'retail'},
+  {re:/شقه|شقق|apartment|flat/, ar:'شقة', arQ:'شقة', en:'apartment', enQ:'apartment', cat:'apt', aq:'apartment'},
+];
+const MK_FILLER = new Set(['انا','عايز','عاوز','عايزه','محتاج','محتاجه','بدور','بادور','دور','دورلي','هات','هاتلي','جيبلي','لي','ليا','على','علي','عن','في','فى','من','و','او','ده','دي','حاجه','كده','مثلا','يا','ريت','لو','سمحت','بقالها','اسبوع','اسبوعين','شهر','يكون','تكون','فيها','بها','مع','لل','ال','كمبوند','كومباوند','كمباوند','compound','مشروع','منطقه','مدينه','للايجار','ايجار','اجار','للبيع','بيع','شراء','تمليك','rent','sale','for','in','the','a','i','want','need','متاح','متاحه','جديد','جديده','اعلانات','اعلان','لحد','حدود','ميزانيه','بسعر','سعر','الف','مليون','متر','غرف','غرفه','اوض','اوضه','نوم','مفروش','مفروشه','فاضي','تشطيب','سوبر','لوكس','ب','بـ']);
+
+function mkParse(text){
+  const raw = String(text || '').trim(), s = AR_NORM(raw.toLowerCase());
+  const Q = parseUnitQuery(raw), L = parseLeadText(raw);
+  const r = {raw, purpose:Q.purpose || (kindFromText(raw) || ''), beds:Q.beds || L.beds || null, area:Q.area || L.area || null, budget:L.budget || null, furn:Q.furn || L.furn || ''};
+  r.type = MK_TYPES.find(t => t.re.test(s)) || null;
+  // المكان: لو مشروع معروف عندنا في دليل المشاريع، وإلا الكلام اللي بعد "كمبوند / في"
+  let place = L.proj || '';
+  if(!place){
+    const m = raw.match(/(?:كمبوند|كومباوند|كمباوند|compound|مشروع|منطقة|منطقه|مدينة|مدينه|في|فى|in)\s+([^\d،,.؟?]{2,40})/i);
+    let cand = m ? m[1] : raw;
+    const words = cand.split(/\s+/).filter(w => w && !MK_FILLER.has(AR_NORM(w.toLowerCase())) && !(r.type && r.type.re.test(AR_NORM(w.toLowerCase())))
+      && !/^(ب|لل|ل|و)?(ايجار|اجار|بيع|جنينه|حديقه|جاردن|ارضي|مفروش|مفروشه|غرف|اوض|متر|الف|مليون)$/.test(AR_NORM(w.toLowerCase())) && !/^\d/.test(w)
+      && !/^(شقه|شقق|فيلا|روف|دوبلكس|تاون|توين|بجنينه|بحديقه|بجاردن)$/.test(AR_NORM(w.toLowerCase())));
+    place = words.slice(0, 4).join(' ').trim();
+  }
+  r.place = place;
+  r.placeEn = mkEnglish(place);
+  return r;
+}
+// اسم المكان بالإنجليزي (أوبرا سيتي = Opera City) عشان المواقع
+function mkEnglish(p){
+  p = String(p || '').trim(); if(!p) return '';
+  if(/[a-z]/i.test(p) && !/[؀-ۿ]/.test(p)) return p;
+  const out = AR_NORM(p.toLowerCase()).split(/\s+/).filter(Boolean).map(w => {
+    if(w in PROJ_WORDS) return PROJ_WORDS[w];
+    if(w.startsWith('ال') && (w.slice(2) in PROJ_WORDS)) return 'el ' + PROJ_WORDS[w.slice(2)];
+    return w;
+  }).filter(Boolean);
+  const en = out.filter(w => /^[a-z0-9 ]+$/.test(w));
+  if(en.length !== out.length) return '';   // مش كل الكلام اتترجم: نسيبه عربي بس
+  return en.join(' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+function mkSummary(r){
+  return [r.purpose === 'rent' ? 'إيجار' : r.purpose === 'sale' ? 'بيع' : '', r.type && r.type.ar, r.beds && (r.beds + ' غرف'), r.area && (r.area + ' م²'),
+    r.budget && ('لحد ' + money(r.budget)), r.furn && FURNISH[r.furn], r.place && ('📍 ' + r.place + (r.placeEn && r.placeEn !== r.place ? ` (${r.placeEn})` : ''))].filter(Boolean);
+}
+const mkD = t => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`; };
+// جوجل: نفس البحث بس محصور في إعلانات آخر X يوم
+function mkGoogle(r, sites){
+  const place = [r.place && `"${r.place}"`, r.placeEn && r.placeEn.toLowerCase() !== String(r.place).toLowerCase() && `"${r.placeEn}"`].filter(Boolean);
+  const parts = [];
+  if(place.length) parts.push(place.length > 1 ? `(${place.join(' OR ')})` : place[0]);
+  if(r.type) parts.push(r.type.arQ === r.type.enQ ? r.type.arQ : `(${r.type.arQ.replace(/[()]/g, '')} OR ${r.type.enQ.replace(/[()]/g, '')})`);
+  if(r.purpose === 'rent') parts.push('(ايجار OR للإيجار OR rent)'); else if(r.purpose === 'sale') parts.push('(للبيع OR بيع OR sale)');
+  if(r.beds) parts.push(`(${r.beds} غرف OR ${r.beds} bedrooms)`);
+  const site = sites.length > 1 ? '(' + sites.map(h => 'site:' + h).join(' OR ') + ')' : 'site:' + sites[0];
+  const days = S.mkDays || 14, now = Date.now();
+  return `https://www.google.com/search?hl=ar&q=${encodeURIComponent(site + ' ' + parts.join(' '))}&tbs=${encodeURIComponent(`cdr:1,cd_min:${mkD(now - days * DAY)},cd_max:${mkD(now)}`)}`;
+}
+const mkSlug = t => String(t || '').toLowerCase().trim().replace(/[^a-z0-9؀-ۿ]+/g, '-').replace(/^-|-$/g, '');
+// رابط الموقع نفسه، مترتب على الأحدث لو الموقع بيسمح
+function mkSiteUrl(k, r){
+  const rent = r.purpose === 'rent', sale = r.purpose === 'sale', kw = r.placeEn || r.place || '';
+  const villa = r.type && r.type.cat === 'villa';
+  if(k === 'dubizzle'){
+    const cat = r.purpose ? `${villa ? 'villas' : 'apartments-duplex'}-for-${rent ? 'rent' : 'sale'}/` : '';
+    return `https://www.dubizzle.com.eg/properties/${cat}${kw ? 'q-' + mkSlug(kw) + '/' : ''}?sorting=desc-creation`;
+  }
+  if(k === 'pf') return `https://www.propertyfinder.eg/ar/search?c=${sale ? 1 : 2}&ob=nd${kw ? '&kw=' + encodeURIComponent(kw) : ''}`;
+  if(k === 'aqarmap') return `https://aqarmap.com.eg/ar/for-${sale ? 'sale' : 'rent'}/${r.type ? r.type.aq : 'apartment'}/`;
+  if(k === 'fbm'){
+    const q = [r.type ? r.type.ar : 'شقة', rent ? 'للإيجار' : sale ? 'للبيع' : '', r.place].filter(Boolean).join(' ');
+    return `https://www.facebook.com/marketplace/cairo/search?daysSinceListed=${(S.mkDays || 14) <= 7 ? 7 : 30}&sortBy=creation_time_descend&query=${encodeURIComponent(q)}`;
+  }
+  if(k === 'fbp'){
+    const q = [r.type ? r.type.ar : 'شقة', rent ? 'للإيجار' : sale ? 'للبيع' : '', r.place].filter(Boolean).join(' ');
+    return `https://www.facebook.com/search/posts/?q=${encodeURIComponent(q)}`;
+  }
+  if(k === 'opensooq') return `https://eg.opensooq.com/ar/find?term=${encodeURIComponent([r.type ? r.type.ar : 'شقة', rent ? 'للإيجار' : sale ? 'للبيع' : '', r.place].filter(Boolean).join(' '))}`;
+  return '';
+}
+// المواقع اللي مش بتفهم اسم الكمبوند من اللينك: بننسخ الاسم عشان تلصقه في خانة البحث
+const MK_COPY = {aqarmap:1, pf:1};
+function mkHist(){ try{ return JSON.parse(localStorage.getItem('blueMktHist') || '[]') || []; }catch(e){ return []; } }
+function mkHistSave(t){ try{ const h = [t, ...mkHist().filter(x => x !== t)].slice(0, 8); localStorage.setItem('blueMktHist', JSON.stringify(h)); }catch(e){} }
+
+function marketEntry(){
+  return `<button class="mkentry" onclick="App.go('market')"><span class="mki">🌐</span><div><b>بحث السوق</b><small>دوّر بالصوت على الإعلانات الجديدة في كل المواقع</small></div><span class="mkgo">›</span></button>`;
+}
+function marketView(){
+  const r = S.mk, days = S.mkDays || 14, hist = mkHist();
+  const dchip = d => `<button class="chip ${days === d ? 'on' : ''}" onclick="App.mkDays(${d})">${d === 7 ? 'آخر أسبوع' : 'آخر أسبوعين'}</button>`;
+  return `<div class="mkhero">
+      <div class="mkh1">🌐 بحث السوق</div>
+      <div class="mkh2">إعلانات المواقع التانية — <b>مش وحداتنا</b>. قول طلبك والسيستم يجهّزلك البحث على كل المواقع على الأحدث بس.</div>
+      <div class="mkbox">
+        <textarea id="mkq" class="in" rows="2" placeholder="مثلاً: شقة إيجار أرضي بجنينة في كمبوند أوبرا سيتي">${esc(r ? r.raw : (S.mkDraft || ''))}</textarea>
+        <div class="row" style="gap:8px;margin-top:8px">
+          ${SpeechRec ? `<button class="btn mkmic" id="mkMic" onclick="App.mkMic()">🎤 اتكلم</button>` : ''}
+          <button class="btn mkbtn" style="flex:1" onclick="App.mkRun()">🔎 دوّر</button>
+        </div>
+        <div class="chips" style="padding:8px 0 0">${dchip(7)}${dchip(14)}</div>
+      </div>
+    </div>
+    ${r ? marketResults(r) : (hist.length ? `<div class="card" style="margin-top:10px"><b style="font-size:13.5px">آخر عمليات بحث</b>${hist.map(h => `<button class="mkhist" onclick="App.mkAgain(${esc(JSON.stringify(h))})">🕘 ${esc(h)}</button>`).join('')}</div>` : '')
+      + `<div class="muted" style="font-size:12.5px;margin:12px 4px;line-height:1.8">💡 قول نوع الوحدة، إيجار ولا بيع، واسم الكمبوند أو المنطقة. ممكن تزود عدد الغرف أو المساحة أو الميزانية.</div>`}`;
+}
+function marketResults(r){
+  const sum = mkSummary(r), days = S.mkDays || 14;
+  const allHosts = ['dubizzle.com.eg', 'propertyfinder.eg', 'aqarmap.com.eg', 'eg.opensooq.com', 'facebook.com'];
+  return `<div class="card" style="margin-top:10px">
+      <div style="font-size:13px;color:var(--muted)">السيستم فهم:</div>
+      <div class="chips" style="padding:6px 0 2px">${sum.length ? sum.map(x => `<span class="chip on mkchip">${esc(x)}</span>`).join('') : '<span class="muted">مفهمتش تفاصيل — جرّب تقول النوع والمكان</span>'}</div>
+      <label class="f" style="margin-top:6px">اسم المكان بالإنجليزي (للمواقع)</label>
+      <input class="in" id="mkEn" dir="ltr" value="${esc(r.placeEn || '')}" placeholder="Opera City" onchange="App.mkEn(this.value)">
+      ${!r.purpose ? `<div class="chips" style="padding-top:8px"><b style="font-size:12.5px;align-self:center">إيجار ولا بيع؟</b><button class="chip" onclick="App.mkPurpose('rent')">إيجار</button><button class="chip" onclick="App.mkPurpose('sale')">بيع</button></div>` : ''}
+    </div>
+    <a class="mkall" href="${esc(mkGoogle(r, allHosts))}" target="_blank" rel="noopener">
+      <b>🔎 كل المواقع مرة واحدة</b><small>إعلانات آخر ${days === 7 ? 'أسبوع' : 'أسبوعين'} بس — من جوجل</small></a>
+    <div class="mkgrid">${MK_SITES.map(st => `<div class="mksite">
+        <div class="mkname">${st.ic} ${st.name}</div>
+        <div class="row" style="gap:6px;margin-top:8px">
+          <button class="btn mini mkopen" onclick="App.mkOpen('${st.k}')">افتح الموقع${st.k === 'fbp' ? '' : ' (الأحدث)'}</button>
+          <a class="btn ghost mini" href="${esc(mkGoogle(r, [st.host]))}" target="_blank" rel="noopener">آخر ${days} يوم</a>
+        </div>
+        ${MK_COPY[st.k] && r.place ? `<div class="mknote">اسم المكان بيتنسخ — الصقه في خانة البحث</div>` : st.k === 'fbp' ? `<div class="mknote">من الفلاتر اختار "أحدث المنشورات"</div>` : ''}
+      </div>`).join('')}</div>
+    <div class="card mktips">
+      <b>⚠️ خد بالك</b>
+      <div>• بعض البروكرز بيجددوا الإعلان القديم عشان يطلع فوق، فممكن يبان جديد وهو قديم. لو لقيت نفس الشقة بنفس الصور متكررة كتير، غالبًا هي قديمة.</div>
+      <div>• زرار "آخر ${days} يوم" بيعتمد على تاريخ جوجل للصفحة، وده تقريبي.</div>
+    </div>
+    <button class="btn ghost block" style="margin-top:10px" onclick="App.mkReset()">بحث جديد</button>`;
+}
+
 /* ---------- إشعارات بتستنى لحد ما تدوس عليها، وكل إشعار بيفتح المحتوى بتاعه ---------- */
 const NOTI_MAX = 40, NOTI_SHOW = 3;
 function notiKey(k){ return 'blueNoti' + k + '_' + ((S.me && S.me.uid) || ''); }
@@ -2257,7 +2436,7 @@ function onAuth(me){
   S.unsub.forEach(f => f && f()); S.unsub = [];
   if(!me || me.error){ S.notis = []; renderNotis(); S._notiSince = null; S._notiIds = null; S.me = null; S.authErr = me && me.error || ''; S.users = {}; S.leads = []; S.acts = []; S.leadsLoaded = false; closeSheet(); return render(); }
   resetZoom();
-  S.me = me; S.authErr = ''; S.newCred = null; S.upload = null; S.dist = null; S.actFilter = 'all'; S.tab = isAdmin() ? 'home' : 'today';
+  S.me = me; S.authErr = ''; S.newCred = null; S.upload = null; S.dist = null; S.actFilter = 'all'; S.tab = /market/.test(location.hash || '') ? 'market' : isAdmin() ? 'home' : 'today';
   S.f = F0();
   S._notiSince = null; S._notiIds = new Set(); notiLoad(); renderNotis();
   S.unsub.push(store.onUsers(u => { S.users = u; render(); }));
@@ -2339,12 +2518,13 @@ function navView(){
 function mainView(){
   if(!S.leadsLoaded) return `<div class="empty">بيحمّل...</div>`;
   switch(S.tab){
-    case 'home': return adminHome();
+    case 'home': return marketEntry() + adminHome();
+    case 'market': return marketView();
     case 'leads': case 'data': return leadsView();
     case 'upload': return uploadView();
     case 'team': return teamView();
     case 'activity': return activityView();
-    case 'today': return todayView();
+    case 'today': return marketEntry() + todayView();
     case 'units': return unitsView();
   }
   return '';
@@ -3925,6 +4105,7 @@ function reelCaption(u){ return unitAdText(u, 'ar') + `\n\n#الشيخ_زايد 
 const App = window.App = {
   go(t){
     if(t === 'upload'){ t = 'data'; }
+    if(t !== 'market' && S.dic && S.tab === 'market'){ try{ S.dic.stop(); }catch(e){} S.dic = null; }
     S.tab = t; S.limit = 60;
     if(t === 'units' && S.uf && S.uf.ids && !S._keepU) S.uf = {...S.uf, ids:null, idsLabel:''}; S._keepU = false;
     if((t === 'leads' || t === 'data') && !S._keepFilter){ S.f = {...F0(), kind:t === 'data' ? 'data' : 'lead'}; }
@@ -5736,6 +5917,41 @@ Object.assign(App, {
   notiClear(){ S.notis = []; S._notiAll = false; notiSave(); renderNotis(); },
   notiAll(){ S._notiAll = !S._notiAll; renderNotis(); },
   notiMin(v){ S._notiMin = v; S._notiAll = false; renderNotis(); },
+});
+
+/* أزرار بحث السوق */
+Object.assign(App, {
+  mkRun(text){
+    const t = (text != null ? text : (($('#mkq') || {}).value || '')).trim();
+    if(t.length < 3) return toast('قول أو اكتب طلبك الأول');
+    S.mk = mkParse(t); mkHistSave(t); render(); window.scrollTo(0, 0);
+  },
+  mkMic(){
+    if(!SpeechRec) return toast('الموبايل ده مش بيدعم الكتابة بالصوت');
+    const btn = $('#mkMic');
+    if(S.dic){ try{ S.dic.stop(); }catch(e){} return; }
+    const r = new SpeechRec(); r.lang = 'ar-EG'; r.continuous = false; r.interimResults = true;
+    let fin = '';
+    r.onresult = e => { let tmp = ''; for(let i = e.resultIndex; i < e.results.length; i++){ if(e.results[i].isFinal) fin += ' ' + e.results[i][0].transcript; else tmp += e.results[i][0].transcript; }
+      const ta = $('#mkq'); if(ta) ta.value = (fin + ' ' + tmp).trim(); };
+    r.onerror = e => { if(e && e.error === 'not-allowed') toast('اسمح للأبلكيشن يستخدم المايك'); };
+    r.onend = () => { if(S.dic !== r) return; S.dic = null; const b = $('#mkMic'); if(b){ b.classList.remove('listening'); b.textContent = '🎤 اتكلم'; }
+      const t = (($('#mkq') || {}).value || '').trim(); if(t.length >= 3) App.mkRun(t); };   // أول ما تخلص كلام: البحث بيتجهز لوحده
+    try{ r.start(); }catch(e){ return toast('مش قادر أشغّل المايك'); }
+    S.dic = r; S.mk = null; const ta = $('#mkq'); if(ta) ta.value = '';
+    if(btn){ btn.classList.add('listening'); btn.textContent = '● بيسمعك... اتكلم'; }
+  },
+  mkDays(d){ S.mkDays = d; const ta = $('#mkq'); if(ta && !S.mk) S.mkDraft = ta.value; render(); },
+  mkEn(v){ if(S.mk){ S.mk.placeEn = String(v || '').trim(); render(); } },
+  mkPurpose(p){ if(S.mk){ S.mk.purpose = p; render(); } },
+  mkAgain(t){ App.mkRun(t); },
+  mkReset(){ S.mk = null; S.mkDraft = ''; render(); setTimeout(() => { const t = $('#mkq'); if(t) t.focus(); }, 50); },
+  mkOpen(k){
+    const r = S.mk; if(!r) return;
+    const url = mkSiteUrl(k, r); if(!url) return;
+    if(MK_COPY[k] && r.place){ const kw = r.placeEn || r.place; try{ navigator.clipboard.writeText(kw).then(() => toast(`"${kw}" اتنسخ — الصقه في البحث`), () => {}); }catch(e){} }
+    window.open(url, '_blank', 'noopener');
+  },
 });
 </script>
 </body>
