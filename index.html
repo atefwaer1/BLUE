@@ -179,6 +179,23 @@ textarea.in{min-height:80px;resize:vertical}
 #toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;
   background:var(--ink);color:#fff;padding:10px 18px;border-radius:12px;font-size:14px;font-weight:600;transition:.25s;z-index:80;max-width:90vw;text-align:center}
 #toast.show{opacity:1;transform:translateX(-50%)}
+/* إشعارات بتستنى لحد ما تدوس عليها */
+#notis{position:fixed;left:50%;transform:translateX(-50%);top:calc(70px + env(safe-area-inset-top));z-index:45;width:min(520px,calc(100vw - 20px));
+  display:flex;flex-direction:column;gap:7px;max-height:68vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#notis.hidden{display:none}
+.noti{display:flex;align-items:center;gap:10px;width:100%;background:#fff;color:#0F172A;border:1px solid #CBD5E1;border-right:5px solid var(--navy);
+  border-radius:14px;padding:10px 10px 10px 6px;box-shadow:0 8px 24px rgba(15,23,42,.22);text-align:right;cursor:pointer;animation:notiIn .25s ease-out}
+.noti .ni{font-size:22px;flex:none;width:30px;text-align:center}
+.noti .nt{flex:1;min-width:0;font-size:14px;line-height:1.45}
+.noti .nt b{display:block;font-weight:700;word-break:break-word}
+.noti .nt small{display:block;color:#64748B;font-size:11.5px;margin-top:2px}
+.noti .nt small i{font-style:normal;color:var(--navy);font-weight:700}
+.noti .nx{flex:none;width:30px;height:30px;border-radius:50%;border:0;background:#F1F5F9;color:#475569;font-size:18px;line-height:1;cursor:pointer}
+.notipill{align-self:flex-start;border:0;border-radius:20px;padding:7px 14px;font-size:13px;font-weight:800;background:#DC2626;color:#fff;box-shadow:0 6px 16px rgba(220,38,38,.35);cursor:pointer;animation:notiIn .25s ease-out}
+#notis.min{width:auto;left:12px;transform:none}
+.nbar{display:flex;gap:7px;justify-content:center}
+.nbar button{border:0;border-radius:20px;padding:6px 14px;font-size:12.5px;font-weight:700;background:#0F172A;color:#fff;box-shadow:0 4px 12px rgba(15,23,42,.25);cursor:pointer}
+@keyframes notiIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
 .cred{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;padding:12px;font-size:14px}
 .cred code{direction:ltr;display:inline-block;background:var(--card);padding:1px 8px;border-radius:6px;font-weight:700}
 .contact{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-top:12px}
@@ -352,6 +369,7 @@ label.chk input{width:20px;height:20px;accent-color:var(--ok)}
 <div id="app"></div>
 <div id="sheet" class="sheet-wrap hidden"></div>
 <div id="toast"></div>
+<div id="notis" class="hidden"></div>
 <div id="lb" class="lb hidden" onclick="if(event.target===this)App.closeLb()"></div>
 
 <script>
@@ -473,12 +491,22 @@ function isStale(l){
 /* ---------- صوت التنبيهات ---------- */
 var ACTX = null;
 function audioCtx(){ try{ ACTX = ACTX || new (window.AudioContext || window.webkitAudioContext)(); if(ACTX.state === 'suspended') ACTX.resume(); }catch(e){} return ACTX; }
-['touchstart', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, () => audioCtx(), {once:false, passive:true}));
+// الآيفون مش بيسمح بصوت قبل أول لمسة: الصوت بيتشال ويرن أول ما تلمس الشاشة
+var BEEP_PENDING = null;
+const BEEP_RANK = {info:1, late:2, lead:3, nudge:4};
+function beepUnlock(){
+  const c = audioCtx(); if(!c || !BEEP_PENDING) return;
+  const k = BEEP_PENDING;
+  const play = () => { if(c.state === 'running' && BEEP_PENDING){ BEEP_PENDING = null; beep(k); } };
+  try{ const r = c.resume(); if(r && r.then) r.then(play).catch(() => {}); else play(); }catch(e){ play(); }
+}
+['touchstart', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, beepUnlock, {once:false, passive:true}));
 const BEEPS = {lead:[[880, .12], [0, .06], [1175, .18]], nudge:[[988, .14], [0, .07], [988, .14], [0, .07], [988, .22]], late:[[660, .2], [0, .08], [520, .3]], info:[[1046, .12]]};
 function beep(kind = 'info'){
   try{
     if(!cfg('sound')) return;
     const c = audioCtx(); if(!c) return;
+    if(c.state !== 'running'){ if(!BEEP_PENDING || (BEEP_RANK[kind] || 1) > (BEEP_RANK[BEEP_PENDING] || 1)) BEEP_PENDING = kind; return; }
     let t = c.currentTime + 0.02;
     (BEEPS[kind] || BEEPS.info).forEach(([f, d]) => {
       if(f){ const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = f;
@@ -1058,6 +1086,7 @@ function filteredUnits(){
   const amin = +f.amin || 0, amax = +f.amax || 0;
   return S.units.filter(u => {
     if(!canSeePending(u)) return false;
+    if(f.ids && !f.ids.includes(u.id)) return false;
     if(f.purpose !== 'all' && !(u.purpose === f.purpose || (u.purpose === 'both' && f.purpose !== 'both'))) return false;
     if(f.furn !== 'all' && !(f.furn === 'empty' ? isUnfurn(u.furnished) : u.furnished === f.furn)) return false;
     if(f.st === 'available' && !availNow(u)) return false;
@@ -1109,7 +1138,7 @@ function unitsView(){
   const soon = S.units.filter(u => isSoon(u) && myUnitsScope(u)).length;
   const pend = S.units.filter(u => u.pendingDup && canSeePending(u)).length;
   const extra = [f.cat, f.proj, f.pmin, f.pmax, f.amin, f.amax].filter(Boolean).length;
-  const any = f.purpose !== 'all' || f.furn !== 'all' || f.st !== 'all' || f.mine || f.ag || f.beds || extra;
+  const any = f.ids || f.purpose !== 'all' || f.furn !== 'all' || f.st !== 'all' || f.mine || f.ag || f.beds || extra;
   const agOpts = unitAgentOptions();
   const projs = S.ufOpen ? projectOptions() : [];
   return `
@@ -1122,6 +1151,7 @@ function unitsView(){
       <button class="btn danger block" style="margin-top:8px" id="dedupBtn" onclick="App.dedupUnits()">🧹 نظّف الوحدات المكررة</button></div>`; })() : ''}
     ${pend ? `<button class="alert" style="margin-bottom:10px;background:#FFF7ED;border-color:#FED7AA;color:#7C2D12" onclick="App.uf('st', 'pending')"><b>${pend}</b><div>وحدة متكررة مستنية موافقة المدير</div></button>` : ''}
     ${soon ? `<button class="alert" style="margin-bottom:10px" onclick="App.uf('st', 'soon')"><b>${soon}</b><div>وحدة متأجرة هتفضى خلال ${daysTxt(cfg('availRemindDays'))} أو فضيت — كلّم المالك</div></button>` : ''}
+    ${f.ids ? `<div class="card" style="margin-bottom:10px;background:#EFF6FF;border-color:#93C5FD;display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:13.5px"><b>🔔 ${esc(f.idsLabel || 'الوحدات بتاعة الإشعار')}</b> (${list.length})</div><button class="btn ghost mini" onclick="App.uclear()">اعرض كل الوحدات ✕</button></div>` : ''}
     <input class="search" id="uq" type="search" placeholder="مثلاً: شقة للإيجار ذا أدرس 150 متر" value="${esc(f.q)}" oninput="App.usearch(this.value)">
     <div class="chips" style="padding-top:2px"><b style="font-size:12.5px;align-self:center;white-space:nowrap">الإتاحة:</b>${chip('st', 'all', 'الكل')}${chip('st', 'available', '✅ متاح الآن')}${chip('st', 'month', '📅 خلال شهر')}</div>
     <div class="chips">${chip('purpose', 'all', 'الكل')}${chip('purpose', 'sale', 'بيع')}${chip('purpose', 'rent', 'إيجار')}
@@ -2094,7 +2124,7 @@ function makeFirebaseStore(){
    التطبيق
    ===================================================================== */
 const F0 = () => ({q:'', status:'all', sales:'all', special:'', src:'all', kind:'lead', ct:''});
-const UF0 = () => ({q:'', purpose:'all', furn:'all', st:'all', mine:false, ag:'', beds:'', cat:'', proj:'', pmin:'', pmax:'', amin:'', amax:''});
+const UF0 = () => ({ids:null, idsLabel:'', q:'', purpose:'all', furn:'all', st:'all', mine:false, ag:'', beds:'', cat:'', proj:'', pmin:'', pmax:'', amin:'', amax:''});
 const store = firebaseConfig.apiKey ? makeFirebaseStore() : makeDemoStore();
 const S = {
   me:null, authErr:'', users:{}, leads:[], acts:[], tab:null, unsub:[], leadsLoaded:false,
@@ -2128,6 +2158,89 @@ const staffList = () => Object.values(S.users).filter(u => u.role !== 'admin' &&
   && (isBoss() || u.leaderId === S.me.uid));
 const uidsOf = id => { const u = S.users[id]; return u ? [u.uid, ...(u.prevUids || [])] : [id]; };
 
+/* ---------- إشعارات بتستنى لحد ما تدوس عليها، وكل إشعار بيفتح المحتوى بتاعه ---------- */
+const NOTI_MAX = 40, NOTI_SHOW = 3;
+function notiKey(k){ return 'blueNoti' + k + '_' + ((S.me && S.me.uid) || ''); }
+function notiLoad(){ try{ S.notis = JSON.parse(localStorage.getItem(notiKey('s')) || '[]') || []; }catch(e){ S.notis = []; } S._notiAll = false; }
+function notiSave(){ try{ localStorage.setItem(notiKey('s'), JSON.stringify((S.notis || []).slice(0, NOTI_MAX))); }catch(e){} }
+function notiSeen(){ try{ return +localStorage.getItem(notiKey('Seen')) || 0; }catch(e){ return 0; } }
+function notiSeenSet(t){ try{ localStorage.setItem(notiKey('Seen'), String(t)); }catch(e){} }
+function arN(n, one, two, many){ return n === 1 ? one : n === 2 ? two : `${n} ${many}`; }
+function notiText(n){
+  const nm = n.byName || 'حد';
+  if(n.k === 'units') return `${nm} ضاف ${arN(n.n, 'وحدة', 'وحدتين', 'وحدات')}`;
+  if(n.k === 'leads') return `${nm} ضاف ${arN(n.n, 'عميل جديد', 'عميلين جداد', 'عملاء جداد')}`;
+  if(n.k === 'calls') return `${nm} سجّل ${arN(n.n, 'مكالمة', 'مكالمتين', 'مكالمات')}`;
+  if(n.k === 'viewing') return n.n === 1 ? n.note : `${nm} — ${n.n} حركات معاينة`;
+  if(n.k === 'other') return n.n === 1 ? `${nm}: ${n.note}` : `${nm} — ${n.n} حاجات جديدة`;
+  if(n.k === 'leadlist'){ const c = (n.leadIds || []).length; return `${n.pre || 'وصل'} ${arN(c, 'عميل جديد', 'عميلين جداد', 'عملاء جداد')}`; }
+  return n.text || '';
+}
+const NOTI_IC = {units:'🏠', leads:'👤', calls:'📞', viewing:'🚶', other:'🔔', leadlist:'🔥', lead:'⚠️', home:'📌', report:'💬'};
+function renderNotis(){
+  const box = $('#notis'); if(!box) return;
+  const L = (S.me && S.notis) || [];
+  if(!L.length){ box.innerHTML = ''; box.classList.add('hidden'); return; }
+  box.classList.remove('hidden'); box.classList.toggle('min', !!S._notiMin);
+  if(S._notiMin){ box.innerHTML = `<button class="notipill" onclick="App.notiMin(false)">🔔 ${L.length === 1 ? 'إشعار جديد' : L.length === 2 ? 'إشعارين' : L.length + ' إشعارات'} — اضغط تشوفهم</button>`; return; }
+  const shown = S._notiAll ? L : L.slice(0, NOTI_SHOW);
+  box.innerHTML = shown.map(n => `<div class="noti" role="button" onclick="App.notiGo('${n.id}')"><div class="ni">${n.ic || NOTI_IC[n.k] || '🔔'}</div>
+      <div class="nt"><b>${esc(notiText(n).slice(0, 140))}</b><small>${ago(n.last)} · <i>اضغط عشان تشوف ›</i></small></div>
+      <button class="nx" aria-label="اقفل" onclick="event.stopPropagation();App.notiDel('${n.id}')">×</button></div>`).join('')
+    + `<div class="nbar">${L.length > NOTI_SHOW ? `<button onclick="App.notiAll()">${S._notiAll ? 'قلّل ▲' : `+${L.length - NOTI_SHOW} إشعار كمان ▼`}</button>` : ''}<button onclick="App.notiMin(true)">صغّرهم ▲</button>${L.length > 1 ? `<button onclick="App.notiClear()">امسح الكل</button>` : ''}</div>`;
+}
+// بيضيف إشعار، ولو فيه إشعار من نفس النوع لنفس الشخص لسه ما اتداسش عليه بيجمعهم في واحد
+function notiAdd(x){
+  if(!S.me) return;
+  S.notis = S.notis || [];
+  const old = x.key ? S.notis.find(n => n.key === x.key) : null;
+  if(old){
+    old.n = (old.n || 0) + (x.n || 1); old.last = Math.max(old.last || 0, x.last || Date.now()); old.since = Math.min(old.since || x.since || Date.now(), x.since || Date.now());
+    if(x.note) old.note = x.note; if(x.text) old.text = x.text;
+    if(x.leadIds) old.leadIds = [...new Set([...(old.leadIds || []), ...x.leadIds])];
+    S.notis = [old, ...S.notis.filter(n => n !== old)];
+  }else S.notis.unshift({id:'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), n:1, last:Date.now(), since:x.last || Date.now(), ...x});
+  S._notiMin = false; S.notis = S.notis.slice(0, NOTI_MAX); notiSave(); renderNotis();
+}
+function actNotiKind(a){
+  const t = a.note || '';
+  if(/^ضاف وحدة/.test(t)) return 'units';
+  if(/^ضاف عميل جديد/.test(t)) return 'leads';
+  if(a.type === 'call') return 'calls';
+  if(a.type === 'viewing') return 'viewing';
+  return 'other';
+}
+// نشاط الفريق اللي حصل من آخر مرة فتحت فيها الأبلكيشن + اللي بيحصل وهو مفتوح
+function notiFromActs(list){
+  if(!S.me || !(list && list.length)) { if(S._notiSince == null && S.me) S._notiSince = notiSeen() || Date.now() - DAY; return; }
+  if(S._notiSince == null) S._notiSince = notiSeen() || Date.now() - DAY;
+  S._notiIds = S._notiIds || new Set();
+  const fresh = list.filter(a => a && a.at > S._notiSince && a.by && a.by !== S.me.uid && !S._notiIds.has(a.id)).sort((a, b) => a.at - b.at);
+  if(!fresh.length) return;
+  fresh.forEach(a => { S._notiIds.add(a.id); const k = actNotiKind(a);
+    notiAdd({key:`act|${a.by}|${k}`, k, by:a.by, byName:a.byName || userName(a.by), note:a.note || '', last:a.at, since:a.at}); });
+  const mx = Math.max(...fresh.map(a => a.at)); notiSeenSet(Math.max(mx, notiSeen()));
+  beep('info');
+}
+// السيلز: العملاء اللي وصلوه والتنبيهات اللي جاتله وهو قافل الأبلكيشن
+function notiSalesOnOpen(list){
+  const since = notiSeen() || Date.now() - DAY, me = S.me.uid;
+  const fr = list.filter(l => l.assignedTo === me && l.createdBy !== me && (l.assignedAt || l.createdAt || 0) > since);
+  if(fr.length) notiAdd({key:'newleads', k:'leadlist', pre:'وصلك', leadIds:fr.map(l => l.id)});
+  list.filter(l => l.nudge && l.assignedTo === me && l.nudge.at > since && l.nudge.by !== me)
+    .forEach(l => notiAdd({key:'nudge|' + l.id, k:'lead', leadId:l.id, text:`${l.nudge.byName} نبّهك على ${l.name || 'عميل'}: ${l.nudge.msg || ''}`, last:l.nudge.at}));
+  notiSeenSet(Date.now());
+  if(fr.length) beep('lead');
+}
+function notiLeadSheet(ids, title){
+  const L = ids.map(leadById).filter(Boolean);
+  if(!L.length) return toast('العملاء دول مبقوش موجودين عندك');
+  if(L.length === 1) return App.open(L[0].id);
+  openSheet(`<div class="sheet-h"><h2>${esc(title)}</h2><button class="x" onclick="App.close()">×</button></div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:6px">${L.length} عميل — دوس على أي واحد يفتحلك بياناته</div>${L.map(leadItem).join('')}`);
+}
+setInterval(() => { if(S.notis && S.notis.length) renderNotis(); }, 60000);
+
 render();
 store.init(onAuth);
 
@@ -2142,36 +2255,39 @@ function resetZoom(){
 }
 function onAuth(me){
   S.unsub.forEach(f => f && f()); S.unsub = [];
-  if(!me || me.error){ S.me = null; S.authErr = me && me.error || ''; S.users = {}; S.leads = []; S.acts = []; S.leadsLoaded = false; closeSheet(); return render(); }
+  if(!me || me.error){ S.notis = []; renderNotis(); S._notiSince = null; S._notiIds = null; S.me = null; S.authErr = me && me.error || ''; S.users = {}; S.leads = []; S.acts = []; S.leadsLoaded = false; closeSheet(); return render(); }
   resetZoom();
   S.me = me; S.authErr = ''; S.newCred = null; S.upload = null; S.dist = null; S.actFilter = 'all'; S.tab = isAdmin() ? 'home' : 'today';
   S.f = F0();
+  S._notiSince = null; S._notiIds = new Set(); notiLoad(); renderNotis();
   S.unsub.push(store.onUsers(u => { S.users = u; render(); }));
   S.unsub.push(store.onLeads(list => {
     if(S.leadsLoaded && isAdmin()){
       const old = {}; S.leads.forEach(l => old[l.id] = l.nudge && l.nudge.at);
       const nn = list.filter(l => l.nudge && l.nudge.by !== S.me.uid && old[l.id] !== l.nudge.at && l.assignedTo !== S.me.uid);
-      if(nn.length){ toast(`⚠️ ${nn[0].nudge.byName} نبّه ${userName(nn[0].assignedTo)} على ${nn[0].name || 'عميل'}`); beep('nudge'); }
+      if(nn.length){ nn.forEach(l => notiAdd({key:'nudge|' + l.id, k:'lead', leadId:l.id, text:`${l.nudge.byName} نبّه ${userName(l.assignedTo)} على ${l.name || 'عميل'}`, last:l.nudge.at})); beep('nudge'); }
       const known = new Set(S.leads.map(l => l.id)), fl = list.filter(l => !known.has(l.id) && l.createdBy !== S.me.uid);
-      if(fl.length){ toast(`🔥 وصل ${fl.length} عميل جديد`); beep('lead'); }
+      if(fl.length){ notiAdd({key:'newleads', k:'leadlist', pre:'وصل', leadIds:fl.map(l => l.id)}); beep('lead'); }
     }
     if(S.leadsLoaded && S.me.role === 'sales'){
       const known = new Set(S.leads.map(l => l.id));
-      const fresh = list.filter(l => !known.has(l.id)).length;
-      if(fresh){ toast(`وصلك ${fresh} عميل جديد`); beep('lead'); }
+      const fresh = list.filter(l => !known.has(l.id));
+      if(fresh.length){ notiAdd({key:'newleads', k:'leadlist', pre:'وصلك', leadIds:fresh.map(l => l.id)}); beep('lead'); }
       const old = {}; S.leads.forEach(l => old[l.id] = l.nudge && l.nudge.at);
       const nn = list.filter(l => l.nudge && l.assignedTo === S.me.uid && old[l.id] !== l.nudge.at);
-      if(nn.length){ toast(`⚠️ ${nn[0].nudge.byName} نبّهك: ${nn[0].nudge.msg}`); beep('nudge'); }
+      if(nn.length){ nn.forEach(l => notiAdd({key:'nudge|' + l.id, k:'lead', leadId:l.id, text:`${l.nudge.byName} نبّهك على ${l.name || 'عميل'}: ${l.nudge.msg || ''}`, last:l.nudge.at})); beep('nudge'); }
     }
+    if(!S.leadsLoaded && S.me.role === 'sales') notiSalesOnOpen(list);
+    if(S.me.role === 'sales') notiSeenSet(Date.now());
     S.leads = list; S.leadsLoaded = true; vwResume(); render();
   }));
-  S.unsub.push(store.onActivities(a => { S.acts = a; if(S.tab === 'activity') render(); }));
+  S.unsub.push(store.onActivities(a => { S.acts = a; try{ notiFromActs(a); }catch(e){} if(S.tab === 'activity') render(); }));
   S.photoCache = {}; S.ownerCache = {}; S.inv = null; S.units = []; S.unitPages = {}; S._unitsSeen = false;
   S.unsub.push(store.onUnits(pages => { const prevReq = new Set((S.requests || []).map(r => r.id)), hadUnits = !!S._unitsSeen; setUnits(pages); S._unitsSeen = true;
     if(mustReport(S.me)){ let seen = 0; try{ seen = +localStorage.getItem('blueRepSeen') || 0; }catch(e){}
       const mine = [dayKey(), dayKey(Date.now() - DAY)].flatMap(d => repReplies(reportOf(S.me.uid, d))).filter(x => x.by !== S.me.uid && x.at > Math.max(seen, S._repNotified || 0)).sort((a, b) => b.at - a.at);
-      if(mine.length){ S._repNotified = mine[0].at; toast(`💬 ${mine[0].byName} ردّ على تقريرك: ${mine[0].text.slice(0, 60)}`); beep('nudge'); } }
-    if(hadUnits){ const nr = (S.requests || []).filter(r => !prevReq.has(r.id) && r.by !== S.me.uid && r.active !== false); if(nr.length){ toast(`📌 طلب جديد من ${nr[0].byName}: ${nr[0].text.slice(0, 60)}`); beep('info'); } }
+      if(mine.length){ S._repNotified = mine[0].at; notiAdd({key:'rep|' + mine[0].at, k:'report', text:`${mine[0].byName} ردّ على تقريرك: ${mine[0].text.slice(0, 80)}`, last:mine[0].at}); beep('nudge'); } }
+    if(hadUnits){ const nr = (S.requests || []).filter(r => !prevReq.has(r.id) && r.by !== S.me.uid && r.active !== false); if(nr.length){ nr.forEach(r => notiAdd({key:'req|' + r.id, k:'home', text:`طلب جديد من ${r.byName}: ${r.text.slice(0, 80)}`, last:r.at || Date.now()})); beep('info'); } }
     if(isBoss()) (S.requests || []).filter(r => r.active === false && Date.now() - (r.closedAt || r.at || 0) > 30 * DAY).slice(0, 20).forEach(r => store.delMetaKey(REQ_DOC, 'requests', r.id).catch(() => {}));
     // تنضيف: النقط اللي اتراجعت والملاحظات اللي عدّى عليها أكتر من شهرين
     if(isBoss()){ pendAll().filter(p => p.st !== 'pending' && Date.now() - (p.revAt || p.at || 0) > 60 * DAY).slice(0, 30).forEach(p => store.delMetaKey(PEND_DOC, 'items', p.id).catch(() => {}));
@@ -3810,6 +3926,7 @@ const App = window.App = {
   go(t){
     if(t === 'upload'){ t = 'data'; }
     S.tab = t; S.limit = 60;
+    if(t === 'units' && S.uf && S.uf.ids && !S._keepU) S.uf = {...S.uf, ids:null, idsLabel:''}; S._keepU = false;
     if((t === 'leads' || t === 'data') && !S._keepFilter){ S.f = {...F0(), kind:t === 'data' ? 'data' : 'lead'}; }
     if(t === 'data' && S.f.kind !== 'data') S.f.kind = 'data';
     if(t === 'leads' && S.f.kind === 'data') S.f.kind = 'lead';
@@ -5592,6 +5709,34 @@ setInterval(() => {
   }
   ALERT_PREV = {...now, uid:S.me.uid};
 }, 30000);
+
+/* أزرار الإشعارات */
+Object.assign(App, {
+  notiGo(id){
+    const n = (S.notis || []).find(x => x.id === id); if(!n) return;
+    const since = (n.since || 0) - 2 * 6e4, mine = x => x.createdBy === n.by && (x.createdAt || 0) >= since;
+    S._notiMin = true; S._notiAll = false;
+    if(n.k === 'units'){
+      if(!S._unitsSeen){ S._notiMin = false; return toast('الوحدات لسه بتحمّل — ثانية وجرّب تاني'); }
+      const ids = S.units.filter(mine).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).map(u => u.id);
+      App.notiDel(id);
+      if(!ids.length) return toast('الوحدات دي مبقتش موجودة');
+      if(ids.length === 1) return App.openUnit(ids[0]);
+      closeSheet(); S.uf = {...UF0(), ids, idsLabel:`الوحدات اللي ضافها ${n.byName}`}; S.ulimit = 60; S._keepU = true; return App.go('units');
+    }
+    App.notiDel(id);
+    if(n.k === 'leads'){ const ids = S.leads.filter(mine).map(l => l.id); return ids.length ? notiLeadSheet(ids, `العملاء اللي ضافهم ${n.byName}`) : App.person(n.by); }
+    if(n.k === 'leadlist') return notiLeadSheet(n.leadIds || [], notiText(n));
+    if(n.k === 'lead') return n.leadId && leadById(n.leadId) ? App.open(n.leadId) : toast('العميل ده مش متاح');
+    if(n.k === 'home'){ closeSheet(); return App.go(isAdmin() ? 'home' : 'today'); }
+    if(n.k === 'report') return App.repSheet();
+    if(n.by) return App.person(n.by);
+  },
+  notiDel(id){ S.notis = (S.notis || []).filter(x => x.id !== id); notiSave(); renderNotis(); },
+  notiClear(){ S.notis = []; S._notiAll = false; notiSave(); renderNotis(); },
+  notiAll(){ S._notiAll = !S._notiAll; renderNotis(); },
+  notiMin(v){ S._notiMin = v; S._notiAll = false; renderNotis(); },
+});
 </script>
 </body>
 </html>
