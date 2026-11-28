@@ -1461,6 +1461,8 @@ function unitSheet(u){
     <button class="btn" style="background:#1877F2" onclick="App.mpSheet('${u.id}')">🛒 ماركت بليس</button>
   </div>
   <button class="btn block" style="margin-top:8px;background:linear-gradient(90deg,#0B2A5B,#1E5BB8)" onclick="App.reelSheet('${u.id}')">🎬 اعمل ريل فيديو للوحدة</button>
+  ${S.me && !isOwner() ? `<button class="btn block" style="margin-top:8px;background:#16A34A" onclick="App.uvSheet('${u.id}')">🚶 طالع معاينة على الوحدة دي</button>` : ''}
+  ${unitVwBlock(u)}
   ${unitLocBlock(u)}
   ${unitLayoutBlock(u)}
 
@@ -3291,7 +3293,20 @@ function commentsCard(){
 /* ---------------- زميل يعمل المعاينة بالنيابة عن صاحب العميل ---------------- */
 // الطلب متخزن في ملف يشوفه الكل (الزميل مش شايف عملاء غيره)، والنقط بتروح لصاحب العميل بعد موافقة المدير
 const PROXY_DOC = 'meta_proxy';
-const pxAll = () => Object.entries(S.proxy || {}).filter(([, x]) => x && x.leadId).map(([id, x]) => ({...x, id}));
+const pxAll = () => Object.entries(S.proxy || {}).filter(([, x]) => x && (x.leadId || x.kind === 'broker')).map(([id, x]) => ({...x, id}));
+const pxWho = x => x.kind === 'broker' ? `بروكر: ${x.brokerName || '—'}` : (x.leadName || 'عميل');
+// المعاينات اللي اتعملت على وحدة معينة (من صفحة الوحدة)
+function unitVwBlock(u){
+  const label = [u.project, u.unitNo].filter(Boolean).join(' – ');
+  const lv = S.leads.filter(l => l.viewing && l.viewing.active && (l.viewing.unitId === u.id || (label && l.viewing.unit === label))).map(l => `🚶 ${esc(l.viewing.byName || '')} في معاينة دلوقتي مع ${esc(l.name || 'عميل')}`);
+  const px = pxAll().filter(x => x.st === 'active' && (x.unitId === u.id || (label && x.unit === label))).map(x => `🚶 ${esc(x.toName || '')} في معاينة دلوقتي مع ${esc(pxWho(x))}`);
+  const all = [...lv, ...px]; if(!all.length) return '';
+  return `<div class="card" style="margin-top:8px;background:#F0FDF4;border-color:#86EFAC;font-size:13.5px">${all.join('<br>')}</div>`;
+}
+const knownBrokers = () => { const m = {};
+  S.leads.forEach(l => { if(l.brokerName) m[l.brokerName.trim()] = l.brokerPhone || m[l.brokerName.trim()] || ''; });
+  pxAll().forEach(x => { if(x.kind === 'broker' && x.brokerName) m[x.brokerName.trim()] = x.brokerPhone || m[x.brokerName.trim()] || ''; });
+  return m; };
 const pxForLead = id => pxAll().filter(x => x.leadId === id).sort((a, b) => b.at - a.at);
 const pxMine = () => pxAll().filter(x => S.me && x.to === S.me.uid && ['sent', 'active'].includes(x.st)).sort((a, b) => a.at - b.at);
 const pxActive = () => pxAll().find(x => S.me && x.to === S.me.uid && x.st === 'active');
@@ -3311,12 +3326,13 @@ function pxLeadBlock(l){
 // في الرئيسية بتاعة الزميل
 function pxCard(){
   const list = pxMine(); if(!list.length) return '';
-  return `<h3 style="color:#0E7490">👥 معاينات بالنيابة عن زمايلك (${list.length})</h3>` + list.map(x => `<div class="card" style="margin-top:8px;border:2px solid ${x.st === 'active' ? '#16A34A' : '#67E8F9'};background:${x.st === 'active' ? '#F0FDF4' : '#ECFEFF'}">
-    <div style="display:flex;align-items:center;gap:8px">${avatarHtml(x.owner, 34)}<div style="flex:1;min-width:0"><b>${esc(x.ownerName)}</b> طالب تروح مكانه معاينة
-      <div style="font-size:14px;margin-top:2px">العميل: <b>${esc(x.leadName || '—')}</b>${x.unit ? ' · ' + esc(x.unit) : ''}</div>
+  const br = list.filter(x => x.kind === 'broker').length;
+  return `<h3 style="color:#0E7490">${br === list.length ? '🚶 معاينة شغالة' : `👥 معاينات بالنيابة عن زمايلك (${list.length})`}</h3>` + list.map(x => `<div class="card" style="margin-top:8px;border:2px solid ${x.st === 'active' ? '#16A34A' : '#67E8F9'};background:${x.st === 'active' ? '#F0FDF4' : '#ECFEFF'}">
+    <div style="display:flex;align-items:center;gap:8px">${avatarHtml(x.owner, 34)}<div style="flex:1;min-width:0">${x.kind === 'broker' ? '<b>انت في معاينة مع بروكر</b>' : `<b>${esc(x.ownerName)}</b> طالب تروح مكانه معاينة`}
+      <div style="font-size:14px;margin-top:2px">${x.kind === 'broker' ? `البروكر: <b>${esc(x.brokerName || '—')}</b>` : `العميل: <b>${esc(x.leadName || '—')}</b>`}${x.unit ? ' · ' + esc(x.unit) : ''}</div>
       ${x.when ? `<div class="muted" style="font-size:12.5px">الميعاد: ${fmt(x.when)}</div>` : ''}</div></div>
     ${x.msg ? `<div class="note" style="margin-top:6px;white-space:pre-wrap">${esc(x.msg)}</div>` : ''}
-    ${x.phone ? contactBtns(x.phone) : ''}
+    ${x.phone || x.brokerPhone ? contactBtns(x.phone || x.brokerPhone) : ''}
     ${x.st === 'active' ? `<div class="muted" style="font-size:12.5px;margin-top:6px">🚶 انت في المعاينة دي من ${minsAgo(x.start).replace('من ', '')} — خلّي الأبليكيشن مفتوح عشان مكانك يتبعت</div>
       <div class="row" style="margin-top:8px"><button class="btn ghost" onclick="App.vwWhatsPx('${x.id}')">ابعت لمديرك واتساب</button><button class="btn danger" onclick="App.pxEnd('${x.id}')">خلصت المعاينة</button></div>`
       : `<button class="btn block" style="margin-top:8px;background:#16A34A" onclick="App.pxStart('${x.id}')">🚶 ابدأ المعاينة</button>`}</div>`).join('');
@@ -3341,7 +3357,7 @@ async function pxSend(){
 async function pxSync(){
   if(!S.me || S._pxSyncing) return; S._pxSyncing = true;
   try{
-    for(const x of pxAll().filter(x => x.st === 'done' && !x.logged && x.owner === S.me.uid)){
+    for(const x of pxAll().filter(x => x.leadId && x.st === 'done' && !x.logged && x.owner === S.me.uid)){
       const l = leadById(x.leadId); if(!l) continue;
       const helpers = [...(l.helpers || []).filter(h => h.uid !== x.to), {uid:x.to, name:x.toName}];
       await store.updateLeads([l.id], {status:'viewed', lastContactAt:x.end || Date.now(), helpers},
@@ -3962,6 +3978,82 @@ const App = window.App = {
       closeSheet(); toast(isOwner() ? 'اتسجلت القفلة ✓' : '🏆 اتسجلت القفلة ✓ — الـ 20 نقطة هتنزل بعد موافقة مديرك');
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'سجّل القفلة'; }
   },
+  /* معاينة من صفحة الوحدة: مع عميل من عملائي، أو عميل جديد، أو بروكر */
+  uvSheet(uid, who){
+    const u = unitById(uid); if(!u) return;
+    if(myViewing() || pxActive()) return toast('انت أصلاً في معاينة — خلّصها الأول');
+    who = who || 'lead';
+    const label = [u.project, u.unitNo].filter(Boolean).join(' – ');
+    const mine = S.leads.filter(l => l.assignedTo === S.me.uid && !isClosedSt(l.status)).sort((a, b) => (b.lastContactAt || b.createdAt || 0) - (a.lastContactAt || a.createdAt || 0));
+    const brs = knownBrokers();
+    const tab = (k, t) => `<button type="button" class="chip${who === k ? ' on' : ''}" onclick="App.uvSheet('${uid}','${k}')">${t}</button>`;
+    openSheet(`<div class="sheet-h"><h2>🚶 معاينة على ${esc(label || 'الوحدة')}</h2><button class="x" onclick="App.close()">×</button></div>
+      <p class="muted" style="font-size:13px">مكانك هيتبعت لمديرك طول المعاينة، والوحدة متحددة لوحدها عشان يقارن مكانك بلوكيشنها. النقط بتنزل بعد موافقة مديرك.</p>
+      <label class="f">طالع مع مين؟</label>
+      <div class="chips" style="padding:0">${tab('lead', '👤 عميل من عملائي')}${tab('new', '➕ عميل جديد')}${tab('broker', '🤝 بروكر')}</div>
+      <input type="hidden" id="vwUnit" value="${esc(label)}">
+      <div class="card" style="margin-top:8px">
+      ${who === 'lead' ? (mine.length ? `<label class="f" style="margin-top:0">اختار العميل</label>
+          <input class="in" id="uvQ" placeholder="دوّر بالاسم أو الرقم" oninput="App.uvFilter(this.value)">
+          <select class="sel" id="uvLead" size="6" style="margin-top:6px;height:auto">${mine.map((l, i) => `<option value="${l.id}"${i ? '' : ' selected'}>${esc(l.name || 'بدون اسم')} · ${esc(l.phone || '')}</option>`).join('')}</select>`
+          : '<div class="muted">مفيش عملاء معاك دلوقتي — اختار "عميل جديد"</div>')
+      : who === 'new' ? `<label class="f" style="margin-top:0">اسم العميل</label><input class="in" id="uvName">
+          <label class="f">رقم الموبايل</label><input class="in" id="uvPhone" inputmode="tel" dir="ltr">
+          <div class="muted" style="font-size:12px;margin-top:4px">هيتضاف لعملائك على طول وتبدأ المعاينة.</div>`
+      : `<label class="f" style="margin-top:0">اسم البروكر / الشركة</label><input class="in" id="uvBrN" list="uvBrs" oninput="App.uvBrPick(this.value)">
+          <datalist id="uvBrs">${Object.keys(brs).map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+          <label class="f">رقم البروكر</label><input class="in" id="uvBrP" inputmode="tel" dir="ltr">
+          <label class="f">العميل اللي مع البروكر (اختياري)</label><input class="in" id="uvBrC" placeholder="لو تعرف اسمه">`}
+      <button class="btn block green" style="margin-top:12px" id="vwGo" onclick="App.uvGo('${uid}','${who}')">🚶 ابدأ المعاينة</button></div>`);
+    S._uvLeads = mine.map(l => ({id:l.id, t:((l.name || '') + ' ' + (l.phone || '')).toLowerCase()}));
+  },
+  uvFilter(q){
+    q = String(q || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).toLowerCase().trim(); const sel = $('#uvLead'); if(!sel) return;
+    [...sel.options].forEach(o => { const x = (S._uvLeads || []).find(l => l.id === o.value); o.hidden = !!q && !(x && x.t.includes(q)); });
+    const first = [...sel.options].find(o => !o.hidden); if(first) sel.value = first.value;
+  },
+  uvBrPick(n){ const p = knownBrokers()[String(n || '').trim()]; if(p && $('#uvBrP') && !$('#uvBrP').value) $('#uvBrP').value = p; },
+  async uvGo(uid, who){
+    const u = unitById(uid); if(!u) return;
+    if(who === 'lead'){
+      const id = ($('#uvLead') || {}).value; if(!id) return toast('اختار العميل الأول');
+      return App.vwStart(id);
+    }
+    if(who === 'new'){
+      const name = $('#uvName').value.trim(), phone = normalizePhone($('#uvPhone').value);
+      if(!name) return toast('اكتب اسم العميل');
+      if(phone.replace('+', '').length < 7) return toast('رقم التليفون مش مظبوط');
+      const dup = S.leads.find(l => l.phone === phone);
+      if(dup){ if(dup.assignedTo === S.me.uid) return App.vwStart(dup.id); return toast(`الرقم ده موجود قبل كده${dup.assignedTo ? ' مع ' + userName(dup.assignedTo) : ''}`); }
+      const b = $('#vwGo'); b.disabled = true; b.textContent = 'بيضيف العميل...';
+      const now = Date.now();
+      try{
+        await store.addLeads([{name, phone, project:u.project || '', unit:u.unitNo || '', extra:{}, clientType:u.purpose === 'rent' ? 'tenant' : 'buyer', source:null,
+          status:'new', assignedTo:S.me.uid, teamId:(teamOf(S.me.uid) || null), assignedAt:now, createdAt:now, createdBy:S.me.uid, createdByName:S.me.name, assignedBy:S.me.uid, assignedByName:S.me.name,
+          lastContactAt:null, nextFollowUp:null, callCount:0, history:[], req:null}]);
+        scoreBump('l');
+        store.addActivity({type:'upload', at:now, by:S.me.uid, byName:S.me.name, note:`ضاف عميل جديد: ${name} (طالع معاه معاينة)`, teamId:(teamOf(S.me.uid) || null)}).catch(() => {});
+        // نستنى العميل يظهر في القايمة وبعدين نبدأ المعاينة
+        for(let i = 0; i < 20; i++){ const nl = S.leads.find(l => l.phone === phone); if(nl){ b.disabled = false; return App.vwStart(nl.id); } await new Promise(r => setTimeout(r, 300)); }
+        toast('العميل اتضاف ✓ — افتحه وابدأ المعاينة'); closeSheet();
+      }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = '🚶 ابدأ المعاينة'; }
+      return;
+    }
+    // بروكر
+    const brokerName = $('#uvBrN').value.trim(), brokerPhone = $('#uvBrP').value.trim(), client = $('#uvBrC').value.trim();
+    if(!brokerName) return toast('اكتب اسم البروكر أو الشركة');
+    const b = $('#vwGo'); b.disabled = true; b.textContent = 'بيحدد مكانك...';
+    let pos = null; try{ pos = await getPosition(); }catch(e){ toast(e.message + ' — المعاينة هتبدأ من غير مكان'); }
+    const now = Date.now(), pid = pendId(), label = [u.project, u.unitNo].filter(Boolean).join(' – ');
+    try{
+      await store.setMeta(PROXY_DOC, {items:{[pid]:{kind:'broker', brokerName, brokerPhone, msg:client ? 'العميل: ' + client : '', unit:label, unitId:u.id, owner:S.me.uid, ownerName:S.me.name, to:S.me.uid, toName:S.me.name, teamId:(teamOf(S.me.uid) || null) || null, at:now, st:'active', start:now,
+        ...(pos ? {lat:pos.lat, lng:pos.lng, sLat:pos.lat, sLng:pos.lng, posAt:now} : {}), ...(pos && u.loc && u.loc.lat ? {minD:distM(pos, u.loc)} : {})}}});
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:null, leadName:'', note:`${S.me.name} طلع معاينة مع بروكر: ${brokerName}${client ? ' (العميل: ' + client + ')' : ''} — ${label}`, teamId:(teamOf(S.me.uid) || null), ...(pos ? {lat:pos.lat, lng:pos.lng} : {})}).catch(() => {});
+      pxTrack(pid); if(PX && pos) PX.pos = pos;
+      closeSheet(); toast('بدأت المعاينة ✓'); render();
+      setTimeout(() => App.vwWhatsPx(pid), 300);
+    }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = '🚶 ابدأ المعاينة'; }
+  },
   pxSheet(id){
     const l = leadById(id); if(!l) return;
     const list = pxColleagues();
@@ -4015,7 +4107,7 @@ const App = window.App = {
   vwWhatsPx(pid){
     const x = (S.proxy || {})[pid]; if(!x) return;
     const m = vwManager();
-    const msg = `📍 أنا طالع معاينة دلوقتي بالنيابة عن ${x.ownerName}\nالعميل: ${x.leadName || '—'}${x.unit ? '\nالوحدة: ' + x.unit : ''}${x.lat ? '\nمكاني: ' + mapsUrl(x) : ''}\nهبعتلك اللوكيشن اللايف دلوقتي.`;
+    const msg = `📍 أنا طالع معاينة دلوقتي${x.kind === 'broker' ? ' مع بروكر' : ' بالنيابة عن ' + x.ownerName}\n${x.kind === 'broker' ? 'البروكر: ' + (x.brokerName || '—') : 'العميل: ' + (x.leadName || '—')}${x.unit ? '\nالوحدة: ' + x.unit : ''}${x.lat ? '\nمكاني: ' + mapsUrl(x) : ''}\nهبعتلك اللوكيشن اللايف دلوقتي.`;
     openSheet(`<div class="sheet-h"><h2>ابعت لمديرك على واتساب</h2><button class="x" onclick="App.close()">×</button></div>
       ${m ? `<p class="muted">هيفتحلك محادثة <b>${esc(m.name)}</b> وفيها رسالة جاهزة. ابعتها وبعدين شارك اللوكيشن اللايف (📎 ← Location ← Share live location).</p>
         <a class="btn block" style="margin-top:12px;background:#25D366" href="https://wa.me/${waNum(m.phone)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">افتح واتساب ${esc(m.name)}</a>`
@@ -4025,7 +4117,7 @@ const App = window.App = {
   pxEnd(pid){
     const x = (S.proxy || {})[pid]; if(!x || x.st !== 'active') return;
     openSheet(`<div class="sheet-h"><h2>✓ إنهاء المعاينة</h2><button class="x" onclick="App.close()">×</button></div>
-      <p class="muted">اللي هتكتبه هيوصل لـ <b>${esc(x.ownerName)}</b> في سجل العميل، والنقط ليه بعد موافقة المدير. واسمك هيتسجل إنك ساعدت في المعاينة.</p>
+      <p class="muted">${x.kind === 'broker' ? 'نقط المعاينة هتنزلك بعد موافقة مديرك.' : `اللي هتكتبه هيوصل لـ <b>${esc(x.ownerName)}</b> في سجل العميل، والنقط ليه بعد موافقة المدير. واسمك هيتسجل إنك ساعدت في المعاينة.`}</p>
       <label class="f">حصل إيه في المعاينة؟</label><textarea class="in" id="pxNote" style="min-height:90px" placeholder="مثلاً: العميل عجبته الشقة وعايز يتفاوض على السعر"></textarea>
       <button class="btn block green" style="margin-top:12px" id="pxDoneBtn" onclick="App.pxDone('${pid}')">إنهاء المعاينة</button>
       <button class="btn ghost block" style="margin-top:8px" onclick="App.close()">لسه مخلصتش</button>`);
@@ -4043,9 +4135,9 @@ const App = window.App = {
       await store.setMeta(PROXY_DOC, {items:{[pid]:{st:'done', end:now, mins, note, ...(lp ? {lat:lp.lat, lng:lp.lng} : {})}}});
       pxStopTrack();
       // النقط لصاحب العميل — بتروح لمديره يوافق عليها
-      await store.setMeta(PEND_DOC, {items:{[pendId()]:{kind:'v', st:'pending', at:now, by:x.owner, byName:x.ownerName, teamId:x.teamId || null, leadId:x.leadId, leadName:x.leadName || '', unit:x.unit || '', unitId:x.unitId || null, start:x.start, mins, note, proxyBy:S.me.uid, proxyName:S.me.name, flags:vwFlags(v, pos, mins), ...(lp ? {lat:lp.lat, lng:lp.lng} : {})}}});
-      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:x.leadId, leadName:x.leadName || '', note:`${S.me.name} خلّص معاينة مع ${x.leadName || 'عميل'} بالنيابة عن ${x.ownerName} (${mins} دقيقة): "${note}"`, teamId:x.teamId || myTeam()}).catch(() => {});
-      closeSheet(); toast(`✓ اتقفلت المعاينة — اتبعتت لـ ${x.ownerName}`); render();
+      await store.setMeta(PEND_DOC, {items:{[pendId()]:{kind:'v', st:'pending', at:now, by:x.owner, byName:x.ownerName, teamId:x.teamId || null, leadId:x.leadId || null, leadName:x.kind === 'broker' ? pxWho(x) : x.leadName || '', unit:x.unit || '', unitId:x.unitId || null, start:x.start, mins, note, ...(x.owner !== S.me.uid ? {proxyBy:S.me.uid, proxyName:S.me.name} : {}), flags:vwFlags(v, pos, mins), ...(lp ? {lat:lp.lat, lng:lp.lng} : {})}}});
+      await store.addActivity({type:'viewing', at:now, by:S.me.uid, byName:S.me.name, leadId:x.leadId, leadName:x.leadName || '', note:`${S.me.name} خلّص معاينة مع ${pxWho(x)}${x.owner !== S.me.uid ? ' بالنيابة عن ' + x.ownerName : ''}${x.unit ? ' — ' + x.unit : ''} (${mins} دقيقة): "${note}"`, teamId:x.teamId || myTeam()}).catch(() => {});
+      closeSheet(); toast(x.owner !== S.me.uid ? `✓ اتقفلت المعاينة — اتبعتت لـ ${x.ownerName}` : '✓ اتقفلت المعاينة — النقط هتنزل بعد موافقة مديرك'); render();
     }catch(e){ toast(fbError(e)); b.disabled = false; b.textContent = 'إنهاء المعاينة'; }
   },
   archiveLead(id){
